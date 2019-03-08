@@ -22,8 +22,10 @@ extern void lkl_smp_enter_secondary_idle(void);
 
 //extern int __thread lkl_tls_cpu;
 extern int lthread_get_sched_id(void);
-
-#define raw_smp_processor_id()	(lthread_get_sched_id())
+extern struct lkl_tls_key *cpu_key;
+extern int lkl_get_current_cpu(void);
+//#define raw_smp_processor_id()	(lthread_get_sched_id())
+#define raw_smp_processor_id()	(lkl_get_current_cpu())
 
 #else
 

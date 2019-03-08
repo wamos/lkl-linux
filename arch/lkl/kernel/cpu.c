@@ -17,7 +17,6 @@
 #include <asm/sched.h>
 #include <asm/syscalls.h>
 
-
 /*
  * This structure is used to get access to the "LKL CPU" that allows us to run
  * Linux code. Because we have to deal with various synchronization requirements
@@ -78,9 +77,22 @@ unsigned int lkl_cpu_count(int cpu)
 
 extern void lthread_set_sched_id(int);
 
+struct lkl_tls_key *cpu_key;
+
 void lkl_set_current_cpu(int cpu)
 {
-	lthread_set_sched_id(cpu);
+//	lthread_set_sched_id(cpu);
+	lkl_ops->tls_set(cpu_key, cpu);
+}
+
+int lkl_get_current_cpu(void)
+{
+//	lthread_set_sched_id(cpu);
+	if (lkl_ops)
+		return lkl_ops->tls_get(cpu_key);
+	else
+		return 0;
+
 }
 
 static inline struct lkl_cpu *current_cpu(void)
@@ -266,6 +278,8 @@ static void lkl_cpu_cleanup(bool shutdown)
 			cpu->lock = NULL;
 		}
 	}
+
+	lkl_ops->tls_free(cpu_key);
 }
 
 void arch_cpu_idle(void)
@@ -316,6 +330,8 @@ int lkl_cpu_init(void)
 			return -ENOMEM;
 		}
 	}
+
+	cpu_key = lkl_ops->tls_alloc(sizeof(void*));
 
 	return 0;
 }
