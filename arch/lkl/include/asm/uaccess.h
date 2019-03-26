@@ -58,7 +58,14 @@ static inline __must_check long raw_copy_to_user(void __user *to,
 	return 0;
 }
 
+extern unsigned long sgxlkl_heap_start;
+extern unsigned long sgxlkl_heap_end;
+static inline int __access_ok(unsigned long addr, unsigned long size)
+{
+	return sgxlkl_heap_start <= addr < sgxlkl_heap_end;
+}
 
+#define __access_ok __access_ok
 #include <asm-generic/uaccess.h>
 
 #endif
