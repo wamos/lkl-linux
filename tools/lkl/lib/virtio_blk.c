@@ -142,7 +142,10 @@ int lkl_disk_add(struct lkl_disk *disk)
 	dev->dev.config_gen = 0;
 	dev->dev.config_data = &dev->config;
 	dev->dev.config_len = sizeof(dev->config);
-	dev->dev.ops = &blk_ops;
+	if (disk->blk_ops)
+		dev->dev.ops = disk->blk_ops;
+	else
+		dev->dev.ops = &blk_ops;
 	if (disk->ops)
 		dev->ops = disk->ops;
 	else

@@ -350,6 +350,7 @@ struct lkl_dev_blk_ops;
  * @dev - a pointer to 'virtio_blk_dev' structure for this disk
  * @fd - a POSIX file descriptor that can be used by preadv/pwritev
  * @handle - an NT file handle that can be used by ReadFile/WriteFile
+ * @blk_ops - a pointer to 'virtio_dev_ops' (useful for asynchronous I/O)
  */
 struct lkl_disk {
 	void *dev;
@@ -358,6 +359,7 @@ struct lkl_disk {
 		void *handle;
 	};
 	struct lkl_dev_blk_ops *ops;
+	struct virtio_dev_ops *blk_ops;
 };
 
 /**
