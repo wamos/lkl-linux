@@ -186,6 +186,9 @@ void virtio_req_complete(struct virtio_req *req, uint32_t len)
 		q->last_used_idx_signaled = virtio_get_used_idx(q);
 		virtio_deliver_irq(_req->dev);
 	}
+
+	if (q->last_avail_idx == le16toh(q->avail->idx))
+		virtio_set_avail_event(q, q->avail->idx);
 }
 
 /*
@@ -317,8 +320,6 @@ void *thread = lkl_host_ops.thread_self();
 		__sync_synchronize();
 		if (virtio_process_one(dev, qidx) < 0)
 			break;
-		if (q->last_avail_idx == le16toh(q->avail->idx))
-			virtio_set_avail_event(q, q->avail->idx);
 	}
 
 	if (dev->ops->release_queue)
@@ -474,7 +475,11 @@ static int virtio_write(void *data, int offset, void *res, int size)
 		dev->queue[dev->queue_sel].ready = val;
 		break;
 	case VIRTIO_MMIO_QUEUE_NOTIFY:
-		virtio_process_queue(dev, val);
+		if (dev->ops->process_queue) {
+			dev->ops->process_queue(dev, val);
+		} else {
+			virtio_process_queue(dev, val);
+		}
 		break;
 	case VIRTIO_MMIO_INTERRUPT_ACK:
 		dev->int_status = 0;

@@ -50,6 +50,9 @@ struct virtio_dev_ops {
 	int (*try_acquire_queue)(struct virtio_dev *dev, int queue_idx);
 	void (*acquire_queue)(struct virtio_dev *dev, int queue_idx);
 	void (*release_queue)(struct virtio_dev *dev, int queue_idx);
+
+	// low level alternative to enqueue in order to allow asynchronous processing
+	void (*process_queue)(struct virtio_dev *dev, int queue_idx);
 };
 
 struct virtio_dev {
