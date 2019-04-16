@@ -113,6 +113,9 @@ struct lkl_host_operations {
 	void* (*mem_alloc)(unsigned long);
 	void (*mem_free)(void *);
 
+	void* (*mem_executable_alloc)(unsigned long);
+	void (*mem_executable_free)(void *, unsigned long size);
+
 	unsigned long long (*time)(void);
 
 	void* (*timer_alloc)(void (*fn)(void *), void *arg);

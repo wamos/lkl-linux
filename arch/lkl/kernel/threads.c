@@ -6,6 +6,12 @@
 #include <asm/cpu.h>
 #include <asm/sched.h>
 
+int __preempt_count = 0;
+EXPORT_SYMBOL(__preempt_count);
+
+struct task_struct *current_task = 0;
+EXPORT_SYMBOL(current_task);
+
 static int init_ti(struct thread_info *ti)
 {
 	ti->sched_sem = lkl_ops->sem_alloc(0);
@@ -105,6 +111,7 @@ struct task_struct *__switch_to(struct task_struct *prev,
 		_prev_jb = _prev->sched_jb;
 	}
 
+	current_task = next;
 	lkl_ops->sem_up(_next->sched_sem);
 	if (test_bit(TIF_SCHED_JB, &_prev_flags)) {
 		lkl_ops->jmp_buf_longjmp(&_prev_jb, 1);

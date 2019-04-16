@@ -13,7 +13,8 @@ void __init bootmem_init(unsigned long mem_sz)
 
 	mem_size = mem_sz;
 
-	_memory_start = (unsigned long)lkl_ops->mem_alloc(mem_size);
+	//_memory_start = (unsigned long)lkl_ops->mem_alloc(mem_size);
+	_memory_start = (unsigned long)lkl_ops->mem_executable_alloc(mem_size);
 	memory_start = _memory_start;
 	BUG_ON(!memory_start);
 	memory_end = memory_start + mem_size;
@@ -71,5 +72,6 @@ void free_initmem(void)
 
 void free_mem(void)
 {
-	lkl_ops->mem_free((void *)_memory_start);
+	//lkl_ops->mem_free((void *)_memory_start);
+	lkl_ops->mem_executable_free((void *) memory_start,  memory_end - memory_start);
 }
