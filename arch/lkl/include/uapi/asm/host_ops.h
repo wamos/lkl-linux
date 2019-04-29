@@ -133,6 +133,16 @@ struct lkl_host_operations {
 };
 
 /**
+ * Sets up x86 CPU info needed for checks when enabling hardware acceleration
+ * of e.g. crypto primitives.
+ */
+int lkl_setup_x86_cpu(char *vendor_id,
+		       unsigned int model,
+		       unsigned int family,
+		       char *capabilities,
+		       unsigned long long xfeature_mask);
+
+/**
  * lkl_start_kernel - registers the host operations and starts the kernel
  *
  * The function returns only after the kernel is shutdown with lkl_sys_halt.

@@ -30,7 +30,7 @@
 #include <crypto/gf128mul.h>
 #include <crypto/internal/skcipher.h>
 #include <crypto/xts.h>
-#include <asm/crypto/glue_helper.h>
+#include <asm/x86/crypto/glue_helper.h>
 
 int glue_ecb_req_128bit(const struct common_glue_ctx *gctx,
 			struct skcipher_request *req)

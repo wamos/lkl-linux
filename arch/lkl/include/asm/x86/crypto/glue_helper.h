@@ -8,7 +8,7 @@
 
 #include <crypto/internal/skcipher.h>
 #include <linux/kernel.h>
-#include <asm/fpu/api.h>
+#include <asm/x86/fpu/api.h>
 #include <crypto/b128ops.h>
 
 typedef void (*common_glue_func_t)(void *ctx, u8 *dst, const u8 *src);

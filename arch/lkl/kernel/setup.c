@@ -12,6 +12,7 @@
 #include <asm/unistd.h>
 #include <asm/syscalls.h>
 #include <asm/cpu.h>
+#include <asm/x86/cpufeature.h>
 
 struct lkl_host_operations *lkl_ops;
 static char cmd_line[COMMAND_LINE_SIZE];
@@ -24,6 +25,27 @@ long lkl_panic_blink(int state)
 {
 	lkl_ops->panic();
 	return 0;
+}
+
+#define X86_VENDOR_ID_INTEL "GenuineIntel"
+#define X86_VENDOR_INTEL 0
+#define X86_VENDOR_UNKNOWN 0xff
+
+int __init lkl_setup_x86_cpu(char *vendor_id,
+			     unsigned int model,
+			     unsigned int family,
+			     char *capabilities,
+			     unsigned long long xfeature_mask) {
+	// For now, we only care about Intel
+	if (memcmp(X86_VENDOR_ID_INTEL, vendor_id, sizeof(X86_VENDOR_ID_INTEL)))
+		boot_cpu_data.x86_vendor = X86_VENDOR_INTEL;
+	else
+		boot_cpu_data.x86_vendor = X86_VENDOR_UNKNOWN;
+	boot_cpu_data.x86_model = model;
+	boot_cpu_data.x86 = family;
+	memcpy(boot_cpu_data.x86_capability, capabilities, sizeof(boot_cpu_data.x86_capability));
+
+	boot_cpu_xfeature_mask = xfeature_mask;
 }
 
 static int __init setup_mem_size(char *str)
