@@ -341,6 +341,12 @@ config BLK_DEV_RAM_SIZE
 	  The default value is 4096 kilobytes. Only change this if you know
 	  what you are doing.
 
+config BLK_DEV_SPDK
+	tristate "SPDK as a block device"
+	default y
+	help
+	  Access block devices via SPDK.
+
 config CDROM_PKTCDVD
 	tristate "Packet writing on CD/DVD media (DEPRECATED)"
 	depends on !UML
