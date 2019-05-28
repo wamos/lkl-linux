@@ -37,11 +37,8 @@ static void spdk_read_completion_cb(void *ctx, const struct spdk_nvme_cpl *cpl) 
 	struct req_iterator iter;
 	char *p = (char*) cmd->spdk_buf;
 
-	printk(KERN_INFO "%s() at %s:%d\n", __func__, __FILE__, __LINE__);
 	rq_for_each_segment(bvec, req, iter) {
 		memcpy(page_address(bvec.bv_page) + bvec.bv_offset, p, bvec.bv_len);
-		printk(KERN_INFO "%s() at %s:%d: %px..%px <- %px..%px\n", __func__, __FILE__, __LINE__,
-			   bvec_to_phys(&bvec), bvec_to_phys(&bvec) + bvec.bv_len, p, p + bvec.bv_len);
 		p += bvec.bv_len;
 	}
 
@@ -165,7 +162,6 @@ static int spdk_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
 	struct spdk_device *dev = data;
 	struct spdk_nvme_qpair *queue;
 
-	printk(KERN_INFO "%s() at %s:%d\n", __func__, __FILE__, __LINE__);
 
 	queue = dev->ns_entry.qpairs[hctx_idx];
 
@@ -178,7 +174,6 @@ static int spdk_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
 
 static enum blk_eh_timer_return spdk_timeout(struct request *req, bool reserved)
 {
-	printk(KERN_INFO "%s() at %s:%d\n", __func__, __FILE__, __LINE__);
 	//FIXME, what does the driver expect here?
 	return 0;
 }
@@ -298,7 +293,6 @@ static long spdk_control_ioctl(struct file *file, unsigned int cmd,
 {
 	struct spdk_device *dev;
 	int ret = -ENOSYS;
-	printk(KERN_INFO "%s() at %s:%d\n", __func__, __FILE__, __LINE__);
 
 	mutex_lock(&spdk_index_mutex);
 	switch (cmd) {
@@ -323,7 +317,6 @@ static const struct file_operations spdk_ctl_fops = {
 
 static void spdk_remove(struct spdk_device *dev)
 {
-	printk(KERN_INFO "%s() at %s:%d\n", __func__, __FILE__, __LINE__);
 	del_gendisk(dev->spdk_disk);
 	blk_cleanup_queue(dev->spdk_queue);
 	blk_mq_free_tag_set(&dev->tag_set);
@@ -359,7 +352,6 @@ out:
 static int spdk_exit_cb(int id, void *ptr, void *data)
 {
 	struct spdk_device *dev = ptr;
-	printk(KERN_INFO "%s() at %s:%d\n", __func__, __FILE__, __LINE__);
 
 	spdk_remove(dev);
 	return 0;
@@ -367,7 +359,6 @@ static int spdk_exit_cb(int id, void *ptr, void *data)
 
 static void __exit spdk_exit(void)
 {
-	printk(KERN_INFO "%s() at %s:%d\n", __func__, __FILE__, __LINE__);
 	idr_for_each(&spdk_index_idr, &spdk_exit_cb, NULL);
 	idr_destroy(&spdk_index_idr);
 	unregister_blkdev(spdk_major, "spdk");
