@@ -121,7 +121,6 @@ static blk_status_t spdk_queue_rq(struct blk_mq_hw_ctx *hctx,
 
 	status = BLK_STS_IOERR;
 
-	fprintf(stderr, "%s() at %s:%d\n", __func__, __FILE__, __LINE__);
 	switch (req_op(rq)) {
 	//case REQ_OP_FLUSH:
 	//	fprintf(stderr, "%s() at %s:%d: flush\n", __func__, __FILE__, __LINE__);
