@@ -331,7 +331,7 @@ int lkl_cpu_init(void)
 		}
 	}
 
-	cpu_key = lkl_ops->tls_alloc(sizeof(void*));
+	cpu_key = lkl_ops->tls_alloc(NULL);
 
 	return 0;
 }
