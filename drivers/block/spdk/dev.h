@@ -13,7 +13,7 @@ struct spdk_device {
 	atomic_t spdk_refcnt;
 	struct blk_mq_tag_set tag_set;
 	struct gendisk *spdk_disk;
-	struct request_queue	*spdk_queue;
+	struct request_queue *spdk_queue;
 };
 extern int spdk_major;
 

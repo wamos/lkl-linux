@@ -30,7 +30,6 @@ out:
 	return err;
 }
 
-
 static void __exit spdk_exit(void)
 {
 	spdk_remove_devices();

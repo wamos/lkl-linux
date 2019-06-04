@@ -111,7 +111,8 @@ static int spdk_exit_cb(int id, void *ptr, void *data)
 	return 0;
 }
 
-void spdk_remove_devices(void) {
+void spdk_remove_devices(void)
+{
 	idr_for_each(&spdk_index_idr, &spdk_exit_cb, NULL);
 	idr_destroy(&spdk_index_idr);
 }

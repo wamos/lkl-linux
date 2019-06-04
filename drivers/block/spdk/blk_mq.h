@@ -5,7 +5,7 @@
 
 struct spdk_cmd {
 	void *spdk_buf;
-    struct spdk_device *dev;
+	struct spdk_device *dev;
 	struct request *req;
 };
 

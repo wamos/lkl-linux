@@ -20,7 +20,7 @@ static long spdk_control_ioctl(struct file *file, unsigned int cmd,
 		mutex_unlock(&spdk_index_mutex);
 		break;
 	case SPDK_REQ_COMPLETE:
-		blk_mq_end_request((struct request*) parm, BLK_STS_OK);
+		blk_mq_end_request((struct request *)parm, BLK_STS_OK);
 		return 0;
 	}
 
@@ -28,14 +28,14 @@ static long spdk_control_ioctl(struct file *file, unsigned int cmd,
 }
 
 static const struct file_operations spdk_ctl_fops = {
-	.open		= nonseekable_open,
-	.unlocked_ioctl	= spdk_control_ioctl,
-	.compat_ioctl	= spdk_control_ioctl,
-	.owner		= THIS_MODULE,
-	.llseek		= noop_llseek,
+	.open = nonseekable_open,
+	.unlocked_ioctl = spdk_control_ioctl,
+	.compat_ioctl = spdk_control_ioctl,
+	.owner = THIS_MODULE,
+	.llseek = noop_llseek,
 };
 
 struct miscdevice spdk_misc = {
-	.name		= "spdk-control",
-	.fops		= &spdk_ctl_fops,
+	.name = "spdk-control",
+	.fops = &spdk_ctl_fops,
 };

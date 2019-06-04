@@ -8,14 +8,16 @@
 
 #include "dev.h"
 
-static void spdk_read_completion_cb(void *ctx, const struct spdk_nvme_cpl *cpl) {
-	struct spdk_cmd *cmd = (struct spdk_cmd*) ctx;
+static void spdk_read_completion_cb(void *ctx, const struct spdk_nvme_cpl *cpl)
+{
+	struct spdk_cmd *cmd = (struct spdk_cmd *)ctx;
 	struct bio_vec bvec;
 	struct request *req = cmd->req;
 	struct req_iterator iter;
-	char *p = (char*) cmd->spdk_buf;
-	rq_for_each_segment(bvec, req, iter) {
-		memcpy(page_address(bvec.bv_page) + bvec.bv_offset, p, bvec.bv_len);
+	char *p = (char *)cmd->spdk_buf;
+	rq_for_each_segment (bvec, req, iter) {
+		memcpy(page_address(bvec.bv_page) + bvec.bv_offset, p,
+		       bvec.bv_len);
 		p += bvec.bv_len;
 	}
 
@@ -26,17 +28,15 @@ static void spdk_read_completion_cb(void *ctx, const struct spdk_nvme_cpl *cpl) 
 	// The polling loop run in "userspace" and not in the context
 	// of lkl. Therefore we need to enter the kernel space to complete
 	// our request
-	BUG_ON(ioctl(cmd->dev->ctl_fd, SPDK_REQ_COMPLETE, (long) req) < 0);
+	BUG_ON(ioctl(cmd->dev->ctl_fd, SPDK_REQ_COMPLETE, (long)req) < 0);
 }
 
-blk_status_t spdk_read(struct spdk_cmd *cmd,
-					   struct request *req,
-					   struct spdk_nvme_ns *ns,
-					   struct spdk_nvme_qpair *qpair,
-					   uint64_t lba,
-					   uint32_t lba_count) {
+blk_status_t spdk_read(struct spdk_cmd *cmd, struct request *req,
+		       struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
+		       uint64_t lba, uint32_t lba_count)
+{
 	int rc = spdk_nvme_ns_cmd_read(ns, qpair, cmd->spdk_buf, lba, lba_count,
-								   spdk_read_completion_cb, cmd, 0);
+				       spdk_read_completion_cb, cmd, 0);
 
 	if (rc < 0) {
 		spdk_dma_free(cmd->spdk_buf);
@@ -49,36 +49,35 @@ blk_status_t spdk_read(struct spdk_cmd *cmd,
 
 static void spdk_write_completion_cb(void *ctx, const struct spdk_nvme_cpl *cpl)
 {
-	struct spdk_cmd *cmd = (struct spdk_cmd*) ctx;
+	struct spdk_cmd *cmd = (struct spdk_cmd *)ctx;
 	struct request *req = cmd->req;
 
 	spdk_dma_free(cmd->spdk_buf);
 	cmd->spdk_buf = NULL;
 	// TODO error handling: spdk_nvme_cpl_is_error(cpl)
 	// what to set in req->status / req->result ?
-	BUG_ON(ioctl(cmd->dev->ctl_fd, SPDK_REQ_COMPLETE, (long) req) < 0);
+	BUG_ON(ioctl(cmd->dev->ctl_fd, SPDK_REQ_COMPLETE, (long)req) < 0);
 }
 
-blk_status_t spdk_write(struct spdk_cmd *cmd,
-					  struct request *rq,
-					  struct spdk_nvme_ns *ns,
-					  struct spdk_nvme_qpair *qpair,
-					  uint64_t lba,
-					  uint32_t lba_count) {
+blk_status_t spdk_write(struct spdk_cmd *cmd, struct request *rq,
+			struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
+			uint64_t lba, uint32_t lba_count)
+{
 	struct bio_vec bvec;
 	struct req_iterator iter;
 	int rc;
-	char *p = (char*) cmd->spdk_buf;
+	char *p = (char *)cmd->spdk_buf;
 
-	rq_for_each_segment(bvec, cmd->req, iter) {
+	rq_for_each_segment (bvec, cmd->req, iter) {
 		// Copying from bv_page would not work in systems with MMU.
 		// However in lkl memory is always mapped.
-		memcpy(p, page_address(bvec.bv_page) + bvec.bv_offset, bvec.bv_len);
+		memcpy(p, page_address(bvec.bv_page) + bvec.bv_offset,
+		       bvec.bv_len);
 		p += bvec.bv_len;
 	}
 
 	rc = spdk_nvme_ns_cmd_write(ns, qpair, cmd->spdk_buf, lba, lba_count,
-									spdk_write_completion_cb, cmd, 0);
+				    spdk_write_completion_cb, cmd, 0);
 	if (rc < 0) {
 		spdk_dma_free(cmd->spdk_buf);
 		cmd->spdk_buf = NULL;
@@ -95,7 +94,7 @@ blk_status_t spdk_write(struct spdk_cmd *cmd,
 //}
 
 static blk_status_t spdk_queue_rq(struct blk_mq_hw_ctx *hctx,
-			 const struct blk_mq_queue_data *bd)
+				  const struct blk_mq_queue_data *bd)
 {
 	struct request *rq = bd->rq;
 	struct spdk_device *dev = hctx->queue->queuedata;
@@ -107,7 +106,6 @@ static blk_status_t spdk_queue_rq(struct blk_mq_hw_ctx *hctx,
 	uint64_t lba;
 	blk_status_t status;
 	int sector_size;
-									  
 
 	blk_mq_start_request(rq);
 
@@ -141,7 +139,7 @@ static blk_status_t spdk_queue_rq(struct blk_mq_hw_ctx *hctx,
 }
 
 static int spdk_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
-				unsigned int hctx_idx)
+			  unsigned int hctx_idx)
 {
 	struct spdk_device *dev = data;
 	struct spdk_nvme_qpair *queue;
@@ -161,7 +159,7 @@ static enum blk_eh_timer_return spdk_timeout(struct request *req, bool reserved)
 }
 
 const struct blk_mq_ops spdk_mq_ops = {
-	.queue_rq	= spdk_queue_rq,
-	.init_hctx	= spdk_init_hctx,
-	.timeout	= spdk_timeout,
+	.queue_rq = spdk_queue_rq,
+	.init_hctx = spdk_init_hctx,
+	.timeout = spdk_timeout,
 };
