@@ -159,6 +159,7 @@ struct request {
 	struct bio *biotail;
 
 	struct list_head queuelist;
+	struct llist_node spdk_queue;
 
 	/*
 	 * The hash is used inside the scheduler, and killed once the

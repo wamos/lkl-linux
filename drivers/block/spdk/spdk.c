@@ -4,6 +4,8 @@
 
 #include "dev.h"
 #include "ctl.h"
+#include "thread.h"
+#include "poll.h"
 
 static int __init spdk_init(void)
 {
