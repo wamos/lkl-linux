@@ -75,24 +75,27 @@ unsigned int lkl_cpu_count(int cpu)
 	return cpus[cpu].count;
 }
 
-extern void lthread_set_sched_id(int);
+//extern void lthread_set_sched_id(int);
+extern void lthread_set_cpu(int);
+extern int lthread_get_cpu(void);
 
 struct lkl_tls_key *cpu_key;
 
 void lkl_set_current_cpu(int cpu)
 {
 //	lthread_set_sched_id(cpu);
-	lkl_ops->tls_set(cpu_key, cpu);
+//	lkl_ops->tls_set(cpu_key, cpu);
+	lthread_set_cpu(cpu);
 }
 
 int lkl_get_current_cpu(void)
 {
 //	lthread_set_sched_id(cpu);
-	if (lkl_ops)
-		return lkl_ops->tls_get(cpu_key);
-	else
-		return 0;
-
+//	if (lkl_ops)
+//		return lkl_ops->tls_get(cpu_key);
+//	else
+//		return 0;
+	return lthread_get_cpu();
 }
 
 static inline struct lkl_cpu *current_cpu(void)
@@ -619,4 +622,11 @@ void arch_send_call_function_ipi_mask(const struct cpumask *mask)
 	for_each_cpu(cpu, mask) {
 		arch_send_call_function_single_ipi(cpu);
 	}
+}
+
+extern struct lthread* lthread_self(void);
+extern void _lthread_yield_and_resched(struct lthread *lt);
+
+void arch_cpu_idle_exit(void) {
+//    _lthread_yield_and_resched(lthread_self());
 }
