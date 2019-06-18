@@ -46,7 +46,7 @@ static long run_syscall(long no, long *params)
 				params[4], params[5]);
 
 	task_work_run();
-	do_signal(NULL);
+//	do_signal(NULL);
 
 	return ret;
 }
