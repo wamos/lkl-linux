@@ -9,6 +9,7 @@
 #include "blk_mq.h"
 #include "thread.h"
 #include "poll.h"
+#include "irq.h"
 
 static DEFINE_IDR(spdk_index_idr);
 int spdk_major;
@@ -24,9 +25,33 @@ static void free_poll_contexts(struct spdk_poll_ctx *contexts, size_t num)
 		if (ctx->thread_id > 0) {
 			spdk_join_poll_thread(ctx->thread_id);
 		}
+		spdk_teardown_irq(ctx);
 	}
 	kfree(contexts);
 }
+
+static int init_poll_context(struct spdk_poll_ctx *ctx, struct spdk_device *dev,
+			     struct spdk_nvme_qpair *qpair)
+{
+	int err;
+	lkl_thread_t thread;
+
+	ctx->dev = dev;
+	ctx->qpair = qpair;
+
+	spdk_setup_irq(ctx);
+
+	init_llist_head(&ctx->request_queue);
+	init_llist_head(&ctx->irq_queue);
+
+	err = spdk_spawn_poll_thread(&thread,
+				     (void (*)(void *))(spdk_poll_thread), ctx);
+	if (err != 0) {
+		return -err;
+	}
+	ctx->thread_id = err;
+	return 0;
+};
 
 int spdk_add(struct spdk_device **spdk_dev, struct lkl_spdk_ns_entry *entry)
 {
@@ -37,7 +62,6 @@ int spdk_add(struct spdk_device **spdk_dev, struct lkl_spdk_ns_entry *entry)
 	int idx, i;
 	int bs;
 	sector_t size;
-	lkl_thread_t thread;
 
 	err = -ENOMEM;
 	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
@@ -70,18 +94,11 @@ int spdk_add(struct spdk_device **spdk_dev, struct lkl_spdk_ns_entry *entry)
 		goto out_free_idr;
 
 	for (i = 0; i < entry->qpairs_num; i++) {
-		poll_contexts[i].dev = dev;
-		poll_contexts[i].qpair = dev->ns_entry.qpairs[i];
-		init_llist_head(&poll_contexts[i].spdk_queue);
-
-		err = spdk_spawn_poll_thread(
-			&thread, (void (*)(void *))(spdk_poll_thread),
-			&poll_contexts[i]);
-		if (err != 0) {
-			err = -err;
+		err = init_poll_context(&poll_contexts[i], dev,
+					dev->ns_entry.qpairs[i]);
+		if (err < 0) {
 			goto out_free_poll_ctx;
 		}
-		poll_contexts[i].thread_id = err;
 	}
 	dev->poll_contexts = poll_contexts;
 
@@ -100,6 +117,7 @@ int spdk_add(struct spdk_device **spdk_dev, struct lkl_spdk_ns_entry *entry)
 	blk_queue_logical_block_size(dev->blk_mq_queue, bs);
 	blk_queue_physical_block_size(dev->blk_mq_queue, bs);
 	blk_queue_io_min(dev->blk_mq_queue, bs);
+	blk_queue_softirq_done(dev->blk_mq_queue, spdk_softirq_done_fn);
 
 	dev->blk_mq_queue->queuedata = dev;
 

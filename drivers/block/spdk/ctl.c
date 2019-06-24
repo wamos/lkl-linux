@@ -19,9 +19,6 @@ static long spdk_control_ioctl(struct file *file, unsigned int cmd,
 		ret = spdk_add(&dev, (struct lkl_spdk_ns_entry *)parm);
 		mutex_unlock(&spdk_index_mutex);
 		break;
-	case SPDK_REQ_COMPLETE:
-		blk_mq_end_request((struct request *)parm, BLK_STS_OK);
-		return 0;
 	}
 
 	return ret;

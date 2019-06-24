@@ -2,6 +2,7 @@
 #define _SPDK_DEV_H_
 
 #include <linux/blk-mq.h>
+#include <linux/interrupt.h>
 #include <uapi/linux/spdk.h>
 
 struct spdk_device {
@@ -10,6 +11,7 @@ struct spdk_device {
 	// set by sgxlkl_register_spdk_device
 	int dev_id;
 	int ctl_fd;
+	spinlock_t lock;
 	atomic_t spdk_refcnt;
 	struct blk_mq_tag_set tag_set;
 	struct gendisk *spdk_disk;

@@ -1,6 +1,8 @@
 #include "poll.h"
 #include "thread.h"
-#include "linux/llist.h"
+
+#include <linux/llist.h>
+#include <asm/cpu.h>
 
 #include <spdk/stdinc.h>
 #include <spdk/nvme.h>
@@ -26,15 +28,20 @@ static void spdk_read_completion_cb(void *ctx, const struct spdk_nvme_cpl *cpl)
 	// The polling loop run in "userspace" and not in the context
 	// of lkl. Therefore we need to enter the kernel space to complete
 	// our request
-	BUG_ON(ioctl(cmd->dev->ctl_fd, SPDK_REQ_COMPLETE, (long)req) < 0);
+
+	llist_add(&req->spdk_queue, &cmd->poll_ctx->irq_queue);
+
+	lkl_trigger_irq(-1, cmd->poll_ctx->irq);
 }
 
-int spdk_read(struct spdk_cmd *cmd, struct request *req,
-	      struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
-	      uint64_t lba, uint32_t lba_count)
+int spdk_read(struct spdk_cmd *cmd, struct request *req, uint64_t lba,
+	      uint32_t lba_count)
 {
 	int rc;
-	rc = spdk_nvme_ns_cmd_read(ns, qpair, cmd->spdk_buf, lba, lba_count,
+	struct spdk_poll_ctx *ctx = cmd->poll_ctx;
+
+	rc = spdk_nvme_ns_cmd_read(ctx->dev->ns_entry.ns, ctx->qpair,
+				   cmd->spdk_buf, lba, lba_count,
 				   spdk_read_completion_cb, cmd, 0);
 
 	if (rc < 0) {
@@ -56,15 +63,18 @@ static void spdk_write_completion_cb(void *ctx, const struct spdk_nvme_cpl *cpl)
 	cmd->spdk_buf = NULL;
 	// TODO error handling: spdk_nvme_cpl_is_error(cpl)
 	// what to set in req->status / req->result ?
-	BUG_ON(ioctl(cmd->dev->ctl_fd, SPDK_REQ_COMPLETE, (long)req) < 0);
+
+	llist_add(&req->spdk_queue, &cmd->poll_ctx->irq_queue);
+
+	lkl_trigger_irq(-1, cmd->poll_ctx->irq);
 }
 
-int spdk_write(struct spdk_cmd *cmd, struct request *rq,
-	       struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
-	       uint64_t lba, uint32_t lba_count)
+int spdk_write(struct spdk_cmd *cmd, struct request *rq, uint64_t lba,
+	       uint32_t lba_count)
 {
 	struct bio_vec bvec;
 	struct req_iterator iter;
+	struct spdk_poll_ctx *ctx = cmd->poll_ctx;
 	int rc;
 	char *p = (char *)cmd->spdk_buf;
 
@@ -76,7 +86,8 @@ int spdk_write(struct spdk_cmd *cmd, struct request *rq,
 		p += bvec.bv_len;
 	}
 
-	rc = spdk_nvme_ns_cmd_write(ns, qpair, cmd->spdk_buf, lba, lba_count,
+	rc = spdk_nvme_ns_cmd_write(ctx->dev->ns_entry.ns, ctx->qpair,
+				    cmd->spdk_buf, lba, lba_count,
 				    spdk_write_completion_cb, cmd, 0);
 
 	if (rc < 0) {
@@ -88,10 +99,9 @@ int spdk_write(struct spdk_cmd *cmd, struct request *rq,
 	return 0;
 }
 
-static void process_request(struct request *rq, struct spdk_device *dev,
-			    struct spdk_nvme_qpair *qpair)
+static void process_request(struct request *rq, struct spdk_poll_ctx *ctx)
 {
-	struct spdk_nvme_ns *ns = dev->ns_entry.ns;
+	struct spdk_nvme_ns *ns = ctx->dev->ns_entry.ns;
 	struct spdk_cmd *cmd = blk_mq_rq_to_pdu(rq);
 	size_t len = blk_rq_bytes(rq);
 	uint32_t lba_count;
@@ -99,9 +109,13 @@ static void process_request(struct request *rq, struct spdk_device *dev,
 	int status;
 	int sector_size;
 
+	if (!len) {
+		blk_mq_end_request(rq, BLK_STS_OK);
+		return;
+	}
 	cmd->spdk_buf = spdk_dma_malloc(len, 0x1000, NULL);
-	cmd->dev = dev;
 	cmd->req = rq;
+	cmd->poll_ctx = ctx;
 
 	sector_size = spdk_nvme_ns_get_extended_sector_size(ns);
 	lba_count = len / sector_size;
@@ -116,25 +130,22 @@ static void process_request(struct request *rq, struct spdk_device *dev,
 	//	//return spdk_discard();
 	//	//break;
 	case REQ_OP_READ:
-		status = spdk_read(cmd, rq, ns, qpair, lba, lba_count);
+		status = spdk_read(cmd, rq, lba, lba_count);
 		break;
 	case REQ_OP_WRITE:
-		status = spdk_write(cmd, rq, ns, qpair, lba, lba_count);
+		status = spdk_write(cmd, rq, lba, lba_count);
 		break;
 	}
-
-	// TODO: error handling
-	return status;
 }
 
 static void poll_request_queue(struct spdk_poll_ctx *ctx)
 {
 	struct llist_node *node;
 	struct request *req;
-	node = llist_del_first(&ctx->spdk_queue);
+	node = llist_del_first(&ctx->request_queue);
 	if (node) {
 		req = llist_entry(node, struct request, spdk_queue);
-		process_request(req, ctx->dev, ctx->qpair);
+		process_request(req, ctx);
 	}
 }
 

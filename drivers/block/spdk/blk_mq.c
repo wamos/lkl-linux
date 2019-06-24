@@ -10,6 +10,7 @@
 
 #include "dev.h"
 #include "poll.h"
+#include "irq.h"
 
 static blk_status_t spdk_queue_rq(struct blk_mq_hw_ctx *hctx,
 				  const struct blk_mq_queue_data *bd)
@@ -20,18 +21,18 @@ static blk_status_t spdk_queue_rq(struct blk_mq_hw_ctx *hctx,
 
 	blk_mq_start_request(rq);
 
-	llist_add(&rq->spdk_queue, &ctx->spdk_queue);
-
 	switch (req_op(rq)) {
-	//case REQ_OP_FLUSH:
-	//	fprintf(stderr, "%s() at %s:%d: flush\n", __func__, __FILE__, __LINE__);
-	//	//return spdk_flush();
-	//case REQ_OP_DISCARD:
-	//	fprintf(stderr, "%s() at %s:%d: discard\n", __func__, __FILE__, __LINE__);
-	//	//return spdk_discard();
-	//	//break;
+		//case REQ_OP_FLUSH:
+		//	fprintf(stderr, "%s() at %s:%d: flush\n", __func__, __FILE__, __LINE__);
+		//	//return spdk_flush();
+		//case REQ_OP_DISCARD:
+		//	fprintf(stderr, "%s() at %s:%d: discard\n", __func__, __FILE__, __LINE__);
+		//	//return spdk_discard();
+
+		//	//break;
 	case REQ_OP_READ:
 	case REQ_OP_WRITE:
+		llist_add(&rq->spdk_queue, &ctx->request_queue);
 		status = BLK_STS_OK;
 		break;
 	}
