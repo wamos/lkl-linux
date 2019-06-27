@@ -8,7 +8,7 @@ static irqreturn_t spdk_irq_handler(int irq, void *dev_id)
 	struct request *req;
 	struct spdk_poll_ctx *ctx = (struct spdk_poll_ctx *)dev_id;
 
-    for (;;) {
+	for (;;) {
 		node = llist_del_first(&ctx->irq_queue);
 		if (!node) {
 			break;
@@ -17,7 +17,7 @@ static irqreturn_t spdk_irq_handler(int irq, void *dev_id)
 		blk_mq_complete_request(req);
 	}
 
-    return IRQ_HANDLED;
+	return IRQ_HANDLED;
 }
 
 void spdk_setup_irq(struct spdk_poll_ctx *ctx)

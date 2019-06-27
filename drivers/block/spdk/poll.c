@@ -29,8 +29,9 @@ static void spdk_read_completion_cb(void *ctx, const struct spdk_nvme_cpl *cpl)
 	// of lkl. Therefore we need to enter the kernel space to complete
 	// our request
 
+	//printk(KERN_INFO "%s() at %s:%d\n", __func__, __FILE__, __LINE__);
+	//blk_mq_end_request(req, BLK_STS_OK);
 	llist_add(&req->spdk_queue, &cmd->poll_ctx->irq_queue);
-
 	lkl_trigger_irq(-1, cmd->poll_ctx->irq);
 }
 
@@ -64,8 +65,13 @@ static void spdk_write_completion_cb(void *ctx, const struct spdk_nvme_cpl *cpl)
 	// TODO error handling: spdk_nvme_cpl_is_error(cpl)
 	// what to set in req->status / req->result ?
 
-	llist_add(&req->spdk_queue, &cmd->poll_ctx->irq_queue);
+	//printk(KERN_INFO "%s() at %s:%d\n", __func__, __FILE__, __LINE__);
+	//blk_mq_end_request(req, BLK_STS_OK);
+	//fprintf(stderr, "%s() at %s:%d -->\n", __func__, __FILE__, __LINE__);
+	//BUG_ON(ioctl(cmd->poll_ctx->dev->ctl_fd, SPDK_REQ_COMPLETE, (long)req) < 0);
+	//fprintf(stderr, "%s() at %s:%d <--\n", __func__, __FILE__, __LINE__);
 
+	llist_add(&req->spdk_queue, &cmd->poll_ctx->irq_queue);
 	lkl_trigger_irq(-1, cmd->poll_ctx->irq);
 }
 

@@ -11,7 +11,6 @@ struct spdk_device {
 	// set by sgxlkl_register_spdk_device
 	int dev_id;
 	int ctl_fd;
-	spinlock_t lock;
 	atomic_t spdk_refcnt;
 	struct blk_mq_tag_set tag_set;
 	struct gendisk *spdk_disk;
