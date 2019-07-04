@@ -62,7 +62,8 @@ struct lkl_cpu {
 	struct lkl_sem *shutdown_sem;
 } cpus[NR_CPUS];
 
-static int max_cpu_no;
+int lkl_max_cpu_no;
+
 static struct completion enter_idle[NR_CPUS];
 
 lkl_thread_t lkl_cpu_owner(int cpu)
@@ -258,7 +259,7 @@ static void lkl_cpu_cleanup(bool shutdown)
 	int no;
 	struct lkl_cpu *cpu;
 
-	for (no=0; no<max_cpu_no; no++) {
+	for (no=0; no<lkl_max_cpu_no; no++) {
 		cpu = &cpus[no];
 		if (!cpu->shutdown_gate)
 			break;
@@ -314,14 +315,14 @@ int lkl_cpu_init(void)
 	struct lkl_cpu *cpu;
 
 	if (lkl_ops->sysconf)
-		max_cpu_no = lkl_ops->sysconf(83); /* _SC_NPROCESSORS_CONF, FIXME: hardcode here  */
+		lkl_max_cpu_no = lkl_ops->sysconf(83); /* _SC_NPROCESSORS_CONF, FIXME: hardcode here  */
 	else
-		max_cpu_no = NR_CPUS;
-	if (max_cpu_no < 0)
-		return -max_cpu_no;
-	lkl_printf("Setup %d LKL CPUs\n", max_cpu_no);
+		lkl_max_cpu_no = NR_CPUS;
 
-	for (no=0; no<max_cpu_no && no<NR_CPUS; no++) {
+	if (lkl_max_cpu_no < 0)
+		return -lkl_max_cpu_no;
+
+	for (no=0; no<lkl_max_cpu_no && no<NR_CPUS; no++) {
 		cpu = &cpus[no];
 
 		cpu->lock = lkl_ops->mutex_alloc(0);
@@ -361,7 +362,7 @@ int lkl_smp_init(void)
 {
 	int i;
 
-	for (i=0; i<max_cpu_no; i++) {
+	for (i=0; i<lkl_max_cpu_no; i++) {
 		set_cpu_possible(i, true);
 		set_cpu_present(i, true);
 	}

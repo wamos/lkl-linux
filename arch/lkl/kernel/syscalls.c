@@ -58,13 +58,28 @@ static long run_syscall(long no, long *params)
 static int host_task_id;
 static struct task_struct *host0;
 
+extern int lkl_max_cpu_no;
+
 static int new_host_task(struct task_struct **task)
 {
 	pid_t pid;
 
+	lkl_set_current_cpu(task_cpu(host0));
+	int ret = lkl_cpu_get();
+	if (ret < 0)
+		return ret;
+
 	switch_to_host_task(host0);
 
+	int new_cpu = (host_task_id + 1) % lkl_max_cpu_no;
+	if (new_cpu != task_cpu(host0)) {
+		ret = __lkl_cpu_get(new_cpu);
+		if (ret < 0)
+			return ret;
+	}
+
 	pid = kernel_thread(host_task_stub, NULL, CLONE_FLAGS);
+
 	if (pid < 0)
 		return pid;
 
@@ -73,6 +88,17 @@ static int new_host_task(struct task_struct **task)
 	rcu_read_unlock();
 
 	host_task_id++;
+	set_cpus_allowed_ptr(*task, get_cpu_mask(new_cpu));
+	set_cpus_allowed_ptr(*task, cpu_all_mask);
+
+	if (new_cpu != task_cpu(host0)) {
+		// Temporarily clear TIF_HOST_THREAD flag to avoid rescheduling
+		clear_ti_thread_flag(current_thread_info(), TIF_HOST_THREAD);
+		__lkl_cpu_put(task_cpu(host0));
+		set_ti_thread_flag(current_thread_info(), TIF_HOST_THREAD);
+	}
+
+	task_thread_info(*task)->tid = lkl_ops->thread_self();
 
 	snprintf((*task)->comm, sizeof((*task)->comm), "host%d", host_task_id);
 
@@ -88,6 +114,7 @@ static void del_host_task(void *arg)
 	struct task_struct *task = (struct task_struct *)arg;
 	struct thread_info *ti = task_thread_info(task);
 
+	lkl_set_current_cpu(task_cpu(task));
 	if (lkl_cpu_get() < 0)
 		return;
 
@@ -104,11 +131,8 @@ long lkl_syscall(long no, long *params)
 	struct task_struct *task = host0;
 	long ret;
 
-	lkl_set_current_cpu(task_cpu(task));
-	ret = lkl_cpu_get();
-	if (ret < 0)
-		return ret;
 
+	int new_task = 0;
 	if (lkl_ops->tls_get) {
 		task = lkl_ops->tls_get(task_key);
 		if (!task) {
@@ -116,14 +140,15 @@ long lkl_syscall(long no, long *params)
 			if (ret)
 				goto out;
 			lkl_ops->tls_set(task_key, task);
+			new_task = 1;
 		}
-		if (task_cpu(task) != smp_processor_id()) {
-			lkl_cpu_put();
-			lkl_set_current_cpu(task_cpu(task));
-			ret = lkl_cpu_get();
-			if (ret < 0)
-				return ret;
-		}
+	}
+
+	lkl_set_current_cpu(task_cpu(task));
+	if (!new_task) {
+		ret = lkl_cpu_get();
+		if (ret < 0)
+			return ret;
 	}
 
 	switch_to_host_task(task);
@@ -176,7 +201,8 @@ static int secondary_idle_host_task_loop(void *voidp)
 	set_ti_thread_flag(task_thread_info(current), TIF_HOST_THREAD);
 //	rcu_idle_enter();
 	for (;;) {
-		lkl_cpu_put();
+		if (lkl_cpu_owner(cpu) == lkl_ops->thread_self())
+			lkl_cpu_put();
 
 		lkl_ops->sem_down(ti->sched_sem);
 
