@@ -23,6 +23,8 @@ struct spdk_cmd {
 	void *spdk_buf;
 	struct spdk_poll_ctx *poll_ctx;
 	struct request *req;
+	struct req_iterator iter;
+	uint32_t iov_offset;
 };
 
 void spdk_poll_thread(struct spdk_poll_ctx *ctx);

@@ -11,47 +11,86 @@
 static void spdk_read_completion_cb(void *ctx, const struct spdk_nvme_cpl *cpl)
 {
 	struct spdk_cmd *cmd = (struct spdk_cmd *)ctx;
-	struct bio_vec bvec;
 	struct request *req = cmd->req;
-	struct req_iterator iter;
-	char *p = (char *)cmd->spdk_buf;
-	rq_for_each_segment (bvec, req, iter) {
-		memcpy(page_address(bvec.bv_page) + bvec.bv_offset, p,
-		       bvec.bv_len);
-		p += bvec.bv_len;
-	}
 
-	spdk_dma_free(cmd->spdk_buf);
-	cmd->spdk_buf = NULL;
-	// TODO error handling: spdk_nvme_cpl_is_error(cpl)
+	// TODO better error handling
+	BUG_ON(spdk_nvme_cpl_is_error(cpl));
+
+	//printk(KERN_INFO "%s() at %s:%d\n", __func__, __FILE__, __LINE__);
+	//blk_mq_end_request(req, BLK_STS_OK);
 
 	// The polling loop run in "userspace" and not in the context
 	// of lkl. Therefore we need to enter the kernel space to complete
 	// our request
-
-	//printk(KERN_INFO "%s() at %s:%d\n", __func__, __FILE__, __LINE__);
-	//blk_mq_end_request(req, BLK_STS_OK);
 	llist_add(&req->spdk_queue, &cmd->poll_ctx->irq_queue);
 	lkl_trigger_irq(-1, cmd->poll_ctx->irq);
+}
+
+static void reset_sgl(void *ref, uint32_t sgl_offset)
+{
+	struct spdk_cmd *cmd = (struct spdk_cmd *)ref;
+	struct request *req = cmd->req;
+	struct req_iterator *iter = &cmd->iter;
+	struct bio_vec bvec;
+
+	cmd->iov_offset = sgl_offset;
+
+	BUG_ON(!req->bio);
+
+	// This was unfolded from macro expansion of rq_for_each_segment
+	for (iter->bio = req->bio; iter->bio; iter->bio = iter->bio->bi_next) {
+		for (iter->iter = iter->bio->bi_iter;
+		     iter->iter.bi_size &&
+		     ((bvec = bio_iter_iovec(iter->bio, iter->iter)), 1);
+		     bio_advance_iter(iter->bio, &iter->iter, bvec.bv_len)) {
+			if (cmd->iov_offset < bvec.bv_len) {
+				return;
+			}
+			cmd->iov_offset -= bvec.bv_len;
+		}
+	}
+}
+
+static int next_sgl(void *ref, void **address, uint32_t *length)
+{
+	struct spdk_cmd *cmd = (struct spdk_cmd *)ref;
+
+	struct request *req = cmd->req;
+	struct req_iterator *iter = &cmd->iter;
+	struct bio_vec bvec;
+
+	BUG_ON(!req->bio);
+
+	// This was unfolded from macro expansion of rq_for_each_segment
+	if (!iter->iter.bi_size) {
+		BUG_ON(!iter->bio);
+		iter->bio = iter->bio->bi_next;
+		iter->iter = iter->bio->bi_iter;
+
+		BUG_ON(!iter->iter.bi_size);
+	}
+
+	bvec = bio_iter_iovec(iter->bio, iter->iter);
+	BUG_ON(cmd->iov_offset > bvec.bv_len);
+
+	*address = lowmem_page_address(bvec.bv_page) + bvec.bv_offset +
+		   cmd->iov_offset;
+	*length = bvec.bv_len - cmd->iov_offset;
+
+	bio_advance_iter(iter->bio, &iter->iter, bvec.bv_len);
+	cmd->iov_offset = 0;
+
+	return 0;
 }
 
 int spdk_read(struct spdk_cmd *cmd, struct request *req, uint64_t lba,
 	      uint32_t lba_count)
 {
-	int rc;
 	struct spdk_poll_ctx *ctx = cmd->poll_ctx;
 
-	rc = spdk_nvme_ns_cmd_read(ctx->dev->ns_entry.ns, ctx->qpair,
-				   cmd->spdk_buf, lba, lba_count,
-				   spdk_read_completion_cb, cmd, 0);
-
-	if (rc < 0) {
-		spdk_dma_free(cmd->spdk_buf);
-		cmd->spdk_buf = NULL;
-		return rc;
-	}
-
-	return 0;
+	return spdk_nvme_ns_cmd_readv(ctx->dev->ns_entry.ns, ctx->qpair, lba,
+				      lba_count, spdk_read_completion_cb, cmd,
+				      0, reset_sgl, next_sgl);
 }
 
 // This code runs in userspace
@@ -60,16 +99,12 @@ static void spdk_write_completion_cb(void *ctx, const struct spdk_nvme_cpl *cpl)
 	struct spdk_cmd *cmd = (struct spdk_cmd *)ctx;
 	struct request *req = cmd->req;
 
-	spdk_dma_free(cmd->spdk_buf);
-	cmd->spdk_buf = NULL;
-	// TODO error handling: spdk_nvme_cpl_is_error(cpl)
-	// what to set in req->status / req->result ?
+	// TODO better error handling
+	BUG_ON(spdk_nvme_cpl_is_error(cpl));
 
 	//printk(KERN_INFO "%s() at %s:%d\n", __func__, __FILE__, __LINE__);
 	//blk_mq_end_request(req, BLK_STS_OK);
-	//fprintf(stderr, "%s() at %s:%d -->\n", __func__, __FILE__, __LINE__);
 	//BUG_ON(ioctl(cmd->poll_ctx->dev->ctl_fd, SPDK_REQ_COMPLETE, (long)req) < 0);
-	//fprintf(stderr, "%s() at %s:%d <--\n", __func__, __FILE__, __LINE__);
 
 	llist_add(&req->spdk_queue, &cmd->poll_ctx->irq_queue);
 	lkl_trigger_irq(-1, cmd->poll_ctx->irq);
@@ -78,31 +113,11 @@ static void spdk_write_completion_cb(void *ctx, const struct spdk_nvme_cpl *cpl)
 int spdk_write(struct spdk_cmd *cmd, struct request *rq, uint64_t lba,
 	       uint32_t lba_count)
 {
-	struct bio_vec bvec;
-	struct req_iterator iter;
 	struct spdk_poll_ctx *ctx = cmd->poll_ctx;
-	int rc;
-	char *p = (char *)cmd->spdk_buf;
 
-	rq_for_each_segment (bvec, cmd->req, iter) {
-		// Copying from bv_page would not work in systems with MMU.
-		// However in lkl memory is always mapped.
-		memcpy(p, page_address(bvec.bv_page) + bvec.bv_offset,
-		       bvec.bv_len);
-		p += bvec.bv_len;
-	}
-
-	rc = spdk_nvme_ns_cmd_write(ctx->dev->ns_entry.ns, ctx->qpair,
-				    cmd->spdk_buf, lba, lba_count,
-				    spdk_write_completion_cb, cmd, 0);
-
-	if (rc < 0) {
-		spdk_dma_free(cmd->spdk_buf);
-		cmd->spdk_buf = NULL;
-		return rc;
-	}
-
-	return 0;
+	return spdk_nvme_ns_cmd_writev(ctx->dev->ns_entry.ns, ctx->qpair, lba,
+				       lba_count, spdk_write_completion_cb, cmd,
+				       0, reset_sgl, next_sgl);
 }
 
 static void process_request(struct request *rq, struct spdk_poll_ctx *ctx)
@@ -119,7 +134,6 @@ static void process_request(struct request *rq, struct spdk_poll_ctx *ctx)
 		blk_mq_end_request(rq, BLK_STS_OK);
 		return;
 	}
-	cmd->spdk_buf = spdk_dma_malloc(len, 0x1000, NULL);
 	cmd->req = rq;
 	cmd->poll_ctx = ctx;
 
