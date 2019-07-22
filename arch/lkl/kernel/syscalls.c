@@ -89,14 +89,7 @@ static int new_host_task(struct task_struct **task)
 
 	host_task_id++;
 	set_cpus_allowed_ptr(*task, get_cpu_mask(new_cpu));
-	set_cpus_allowed_ptr(*task, cpu_all_mask);
-
-	if (new_cpu != task_cpu(host0)) {
-		// Temporarily clear TIF_HOST_THREAD flag to avoid rescheduling
-		clear_ti_thread_flag(current_thread_info(), TIF_HOST_THREAD);
-		__lkl_cpu_put(task_cpu(host0));
-		set_ti_thread_flag(current_thread_info(), TIF_HOST_THREAD);
-	}
+//	set_cpus_allowed_ptr(*task, cpu_all_mask);
 
 	task_thread_info(*task)->tid = lkl_ops->thread_self();
 
@@ -130,7 +123,7 @@ long lkl_syscall(long no, long *params)
 {
 	struct task_struct *task = host0;
 	long ret;
-
+void *thread = lkl_ops->thread_self();
 
 	int new_task = 0;
 	if (lkl_ops->tls_get) {
@@ -152,6 +145,13 @@ long lkl_syscall(long no, long *params)
 	}
 
 	switch_to_host_task(task);
+
+	if (new_task && task_cpu(task) != task_cpu(host0)) {
+		// Temporarily clear TIF_HOST_THREAD flag to avoid rescheduling
+		clear_ti_thread_flag(current_thread_info(), TIF_HOST_THREAD);
+		__lkl_cpu_put(task_cpu(host0));
+		set_ti_thread_flag(current_thread_info(), TIF_HOST_THREAD);
+	}
 
 	ret = run_syscall(no, params);
 
