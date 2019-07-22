@@ -2,11 +2,14 @@
 #include "virtio.h"
 #include "endian.h"
 
+#define NUM_QUEUES 1
+
 struct virtio_blk_dev {
 	struct virtio_dev dev;
 	struct lkl_virtio_blk_config config;
 	struct lkl_dev_blk_ops *ops;
 	struct lkl_disk disk;
+	struct lkl_mutex **queue_locks;
 };
 
 struct virtio_blk_req_trailer {
@@ -20,6 +23,25 @@ static int blk_check_features(struct virtio_dev *dev)
 
 	return -LKL_EINVAL;
 }
+
+static int blk_try_acquire_queue(struct virtio_dev *dev, int queue_idx)
+{
+	struct virtio_blk_dev *bdev = container_of(dev, struct virtio_blk_dev, dev);
+	return lkl_host_ops.mutex_trylock(bdev->queue_locks[queue_idx]);
+}
+
+static void blk_acquire_queue(struct virtio_dev *dev, int queue_idx)
+{
+	struct virtio_blk_dev *bdev = container_of(dev, struct virtio_blk_dev, dev);
+	lkl_host_ops.mutex_lock(bdev->queue_locks[queue_idx]);
+}
+
+static void blk_release_queue(struct virtio_dev *dev, int queue_idx)
+{
+	struct virtio_blk_dev *bdev = container_of(dev, struct virtio_blk_dev, dev);
+	lkl_host_ops.mutex_unlock(bdev->queue_locks[queue_idx]);
+}
+
 
 static int blk_enqueue(struct virtio_dev *dev, int q, struct virtio_req *req)
 {
@@ -65,8 +87,42 @@ out:
 static struct virtio_dev_ops blk_ops = {
 	.check_features = blk_check_features,
 	.enqueue = blk_enqueue,
+	.try_acquire_queue = blk_try_acquire_queue,
+	.acquire_queue = blk_acquire_queue,
+	.release_queue = blk_release_queue,
 };
 
+static void free_queue_locks(struct lkl_mutex **queues, int num_queues)
+{
+	int i = 0;
+	if (!queues)
+		return;
+
+	for (i = 0; i < num_queues; i++)
+		lkl_host_ops.mutex_free(queues[i]);
+
+	lkl_host_ops.mem_free(queues);
+}
+
+static struct lkl_mutex **init_queue_locks(int num_queues)
+{
+	int i;
+	struct lkl_mutex **ret = lkl_host_ops.mem_alloc(
+		sizeof(struct lkl_mutex*) * num_queues);
+	if (!ret)
+		return NULL;
+
+	memset(ret, 0, sizeof(struct lkl_mutex *) * num_queues);
+	for (i = 0; i < num_queues; i++) {
+		ret[i] = lkl_host_ops.mutex_alloc(1);
+		if (!ret[i]) {
+			free_queue_locks(ret, i);
+			return NULL;
+		}
+	}
+
+	return ret;
+}
 
 int lkl_disk_add(struct lkl_disk *disk)
 {
@@ -92,6 +148,11 @@ int lkl_disk_add(struct lkl_disk *disk)
 	else
 		dev->ops = &lkl_dev_blk_ops;
 	dev->disk = *disk;
+
+	dev->queue_locks = init_queue_locks(NUM_QUEUES);
+
+	if (!dev->queue_locks)
+		goto out_free;
 
 	ret = dev->ops->get_capacity(*disk, &capacity);
 	if (ret) {

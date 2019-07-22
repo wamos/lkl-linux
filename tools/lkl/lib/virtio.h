@@ -47,6 +47,7 @@ struct virtio_dev_ops {
 	 * netdevs, all other devices have NULL acquire/release function
 	 * pointers.
 	 */
+	int (*try_acquire_queue)(struct virtio_dev *dev, int queue_idx);
 	void (*acquire_queue)(struct virtio_dev *dev, int queue_idx);
 	void (*release_queue)(struct virtio_dev *dev, int queue_idx);
 };

@@ -95,6 +95,7 @@ struct lkl_host_operations {
 
 	struct lkl_mutex *(*mutex_alloc)(int recursive);
 	void (*mutex_free)(struct lkl_mutex *mutex);
+	int (*mutex_trylock)(struct lkl_mutex *mutex);
 	void (*mutex_lock)(struct lkl_mutex *mutex);
 	void (*mutex_unlock)(struct lkl_mutex *mutex);
 

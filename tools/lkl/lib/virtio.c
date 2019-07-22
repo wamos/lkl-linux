@@ -302,8 +302,11 @@ void virtio_process_queue(struct virtio_dev *dev, uint32_t qidx)
 
 	if (!q->ready)
 		return;
-
-	if (dev->ops->acquire_queue)
+void *thread = lkl_host_ops.thread_self();
+	if (dev->device_id == LKL_VIRTIO_ID_BLOCK && dev->ops->try_acquire_queue) {
+		if (dev->ops->try_acquire_queue(dev, qidx) != 0)
+			return;
+	} else if (dev->ops->acquire_queue)
 		dev->ops->acquire_queue(dev, qidx);
 
 	while (q->last_avail_idx != le16toh(q->avail->idx)) {
