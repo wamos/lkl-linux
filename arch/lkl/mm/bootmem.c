@@ -5,11 +5,65 @@
 unsigned long memory_start, memory_end;
 static unsigned long _memory_start, mem_size;
 
+unsigned long dpdk_dma_memory_start = 0;
+unsigned long dpdk_dma_memory_end = 0;
+unsigned long spdk_dma_memory_start = 0;
+unsigned long spdk_dma_memory_end = 0;
+
 void *empty_zero_page;
+
+void init_spdk_mem(void)
+{
+	unsigned long bootmap_size;
+	unsigned long memory_start, memory_end, mem_size;
+	mem_size = 1024 * 1024 * 50;
+	memory_start = (unsigned long)lkl_ops->spdk_malloc(mem_size);
+	memory_end = memory_start + mem_size;
+
+	if (PAGE_ALIGN(memory_start) != memory_start) {
+		mem_size -= PAGE_ALIGN(memory_start) - memory_start;
+		memory_start = PAGE_ALIGN(memory_start);
+		mem_size = (mem_size / PAGE_SIZE) * PAGE_SIZE;
+	}
+
+	pr_info("spdk bootmem address range: 0x%lx - 0x%lx\n", memory_start,
+		memory_start + mem_size);
+
+	/*
+	 * Give all the memory to the bootmap allocator, tell it to put the
+	 * boot mem_map at the start of memory.
+	 */
+	max_low_pfn = virt_to_pfn(memory_end);
+	min_low_pfn = virt_to_pfn(memory_start);
+
+	spdk_dma_memory_start = memory_start;
+	spdk_dma_memory_end = memory_end;
+
+	bootmap_size = init_bootmem_node(&dma_zones_page_data[DMA_ZONE_SPDK],
+					 min_low_pfn, min_low_pfn, max_low_pfn);
+
+	/*
+	 * Free the usable memory, we have to make sure we do not free
+	 * the bootmem bitmap so we then reserve it after freeing it :-)
+	 */
+	free_bootmem(memory_start, mem_size);
+	reserve_bootmem(memory_start, bootmap_size, BOOTMEM_DEFAULT);
+
+	{
+		unsigned long zones_size[MAX_NR_ZONES] = {
+			0,
+		};
+
+		zones_size[ZONE_NORMAL] = (mem_size) >> PAGE_SHIFT;
+		free_area_init_node(DMA_ZONE_SPDK, zones_size,
+				    __pa(PAGE_OFFSET) >> PAGE_SHIFT, NULL);
+	}
+}
 
 void __init bootmem_init(unsigned long mem_sz)
 {
 	unsigned long bootmap_size;
+	init_spdk_mem();
 
 	mem_size = mem_sz;
 

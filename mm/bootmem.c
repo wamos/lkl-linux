@@ -22,10 +22,12 @@
 #include "internal.h"
 
 #ifndef CONFIG_NEED_MULTIPLE_NODES
-struct pglist_data __refdata contig_page_data = {
-	.bdata = &bootmem_node_data[0]
+struct pglist_data dma_zones_page_data[3] = {
+	{ .bdata = &bootmem_node_data[0], .node_id = DMA_ZONE_SGX },
+	{ .bdata = &bootmem_node_data[1], .node_id = DMA_ZONE_DPDK },
+	{ .bdata = &bootmem_node_data[2], .node_id = DMA_ZONE_SPDK }
 };
-EXPORT_SYMBOL(contig_page_data);
+EXPORT_SYMBOL(dma_zones_page_data);
 #endif
 
 unsigned long max_low_pfn;
@@ -33,7 +35,7 @@ unsigned long min_low_pfn;
 unsigned long max_pfn;
 unsigned long long max_possible_pfn;
 
-bootmem_data_t bootmem_node_data[MAX_NUMNODES] __initdata;
+bootmem_data_t bootmem_node_data[3] __initdata;
 
 static struct list_head bdata_list __initdata = LIST_HEAD_INIT(bdata_list);
 

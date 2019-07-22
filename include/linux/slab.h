@@ -35,6 +35,9 @@
 #define SLAB_STORE_USER		((slab_flags_t __force)0x00010000U)
 /* Panic if kmem_cache_create() fails */
 #define SLAB_PANIC		((slab_flags_t __force)0x00040000U)
+
+#define SLAB_DPDK_DMA		((slab_flags_t __force)0x10000000U)
+#define SLAB_SPDK_DMA		((slab_flags_t __force)0x40000000U)
 /*
  * SLAB_TYPESAFE_BY_RCU - **WARNING** READ THIS!
  *

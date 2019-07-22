@@ -375,9 +375,7 @@ struct zone {
 	 */
 	long lowmem_reserve[MAX_NR_ZONES];
 
-#ifdef CONFIG_NUMA
 	int node;
-#endif
 	struct pglist_data	*zone_pgdat;
 	struct per_cpu_pageset __percpu *pageset;
 
@@ -902,9 +900,15 @@ extern char numa_zonelist_order[];
 
 #ifndef CONFIG_NEED_MULTIPLE_NODES
 
-extern struct pglist_data contig_page_data;
-#define NODE_DATA(nid)		(&contig_page_data)
-#define NODE_MEM_MAP(nid)	mem_map
+extern struct pglist_data dma_zones_page_data[];
+
+typedef enum {
+	DMA_ZONE_SGX = 0,
+	DMA_ZONE_DPDK = 1,
+	DMA_ZONE_SPDK = 2
+} dma_zone_t;
+#define NODE_DATA(nid) (&dma_zones_page_data[nid])
+#define NODE_MEM_MAP(nid) NODE_DATA(nid)->node_mem_map
 
 #else /* CONFIG_NEED_MULTIPLE_NODES */
 
@@ -956,12 +960,7 @@ static inline int zonelist_zone_idx(struct zoneref *zoneref)
 
 static inline int zonelist_node_idx(struct zoneref *zoneref)
 {
-#ifdef CONFIG_NUMA
-	/* zone_to_nid not available in this context */
-	return zoneref->zone->node;
-#else
-	return 0;
-#endif /* CONFIG_NUMA */
+  return zoneref->zone->node;
 }
 
 struct zoneref *__next_zones_zonelist(struct zoneref *z,
@@ -1063,7 +1062,20 @@ static inline unsigned long early_pfn_to_nid(unsigned long pfn)
 #endif
 
 #ifdef CONFIG_FLATMEM
-#define pfn_to_nid(pfn)		(0)
+extern unsigned long sgxlkl_heap_start, sgxlkl_heap_end, dpdk_dma_memory_start,
+	dpdk_dma_memory_end;
+#define pfn_to_nid(pfn)                                                        \
+	({                                                                     \
+    unsigned long __nid;                                           \
+		if ((pfn) <= sgxlkl_heap_start && (pfn) < sgxlkl_heap_end)      \
+			__nid = DMA_ZONE_SGX;                                  \
+		else if ((pfn) <= dpdk_dma_memory_start &&                      \
+			 (pfn) < dpdk_dma_memory_end)                          \
+			__nid = DMA_ZONE_DPDK;                                 \
+		else                                                           \
+			__nid = DMA_ZONE_SPDK;                                 \
+		__nid;                                                         \
+	})
 #endif
 
 #ifdef CONFIG_SPARSEMEM

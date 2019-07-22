@@ -114,6 +114,12 @@ struct lkl_host_operations {
 	void* (*mem_alloc)(unsigned long);
 	void (*mem_free)(void *);
 
+	void *(*spdk_malloc)(unsigned long);
+	void *(*spdk_free)(void *);
+
+	void *(*dpdk_malloc)(unsigned long);
+	void *(*dpdk_free)(void *);
+
 	unsigned long long (*time)(void);
 
 	void* (*timer_alloc)(void (*fn)(void *), void *arg);

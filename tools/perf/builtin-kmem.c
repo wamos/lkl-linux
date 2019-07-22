@@ -658,6 +658,8 @@ static const struct {
 	{ "__GFP_RECLAIM",		"R" },
 	{ "__GFP_DIRECT_RECLAIM",	"DR" },
 	{ "__GFP_KSWAPD_RECLAIM",	"KR" },
+	{ "GFP_DPDK_DMA",	"DD" },
+	{ "GFP_SPDK_DMA",	"SD" },
 };
 
 static size_t max_gfp_len;

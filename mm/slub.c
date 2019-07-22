@@ -1451,6 +1451,12 @@ static inline struct page *alloc_slab_page(struct kmem_cache *s,
 	struct page *page;
 	unsigned int order = oo_order(oo);
 
+	if (s->flags & SLAB_DPDK_DMA) {
+		flags |= GFP_DPDK_DMA;
+	} else if (s->flags & SLAB_SPDK_DMA) {
+		flags |= GFP_SPDK_DMA;
+	}
+
 	if (node == NUMA_NO_NODE)
 		page = alloc_pages(flags, order);
 	else

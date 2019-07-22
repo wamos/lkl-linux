@@ -45,11 +45,7 @@ struct zone *next_zone(struct zone *zone)
 
 static inline int zref_in_nodemask(struct zoneref *zref, nodemask_t *nodes)
 {
-#ifdef CONFIG_NUMA
 	return node_isset(zonelist_node_idx(zref), *nodes);
-#else
-	return 1;
-#endif /* CONFIG_NUMA */
 }
 
 /* Returns the next zone at or below highest_zoneidx in a zonelist */

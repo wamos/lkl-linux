@@ -4351,7 +4351,22 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order, int preferred_nid,
 	struct page *page;
 	unsigned int alloc_flags = ALLOC_WMARK_LOW;
 	gfp_t alloc_mask; /* The gfp_t that was actually used for allocation */
-	struct alloc_context ac = { };
+	struct alloc_context ac = {};
+	nodemask_t fallback_mask;
+
+	preferred_nid = DMA_ZONE_SGX;
+	if (!nodemask) {
+		nodemask = &fallback_mask;
+	}
+	init_nodemask_of_node(nodemask, DMA_ZONE_SGX);
+
+	if (gfp_mask & GFP_DPDK_DMA) {
+		preferred_nid = DMA_ZONE_DPDK;
+		init_nodemask_of_node(nodemask, DMA_ZONE_DPDK);
+	} else if (gfp_mask & GFP_SPDK_DMA) {
+		preferred_nid = DMA_ZONE_SPDK;
+		init_nodemask_of_node(nodemask, DMA_ZONE_SPDK);
+	}
 
 	gfp_mask &= gfp_allowed_mask;
 	alloc_mask = gfp_mask;
@@ -5361,7 +5376,7 @@ static void __build_all_zonelists(void *data)
 	if (self && !node_online(self->node_id)) {
 		build_zonelists(self);
 	} else {
-		for_each_online_node(nid) {
+		for (nid = DMA_ZONE_SGX; nid <= DMA_ZONE_SPDK; nid++) {
 			pg_data_t *pgdat = NODE_DATA(nid);
 
 			build_zonelists(pgdat);
@@ -6273,9 +6288,7 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat)
 		 * And all highmem pages will be managed by the buddy system.
 		 */
 		zone->managed_pages = is_highmem_idx(j) ? realsize : freesize;
-#ifdef CONFIG_NUMA
 		zone->node = nid;
-#endif
 		zone->name = zone_names[j];
 		zone->zone_pgdat = pgdat;
 		spin_lock_init(&zone->lock);

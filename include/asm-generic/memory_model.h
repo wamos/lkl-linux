@@ -30,9 +30,27 @@
  */
 #if defined(CONFIG_FLATMEM)
 
-#define __pfn_to_page(pfn)	(mem_map + ((pfn) - ARCH_PFN_OFFSET))
-#define __page_to_pfn(page)	((unsigned long)((page) - mem_map) + \
+/*
+//#define __pfn_to_page(pfn)	(mem_map + ((pfn) - ARCH_PFN_OFFSET))
+*/
+#define __pfn_to_page(pfn)                                                     \
+	({                                                                     \
+		unsigned long __pfn = (pfn);                                   \
+		unsigned long __nid = pfn_to_nid(__pfn);                       \
+		NODE_DATA(__nid)->node_mem_map +                               \
+			(__pfn)-NODE_DATA(__nid)->node_start_pfn;              \
+	})
+#define __page_to_pfn(pg)                                                      \
+	({                                                                     \
+		const struct page *__pg = (pg);                                \
+		struct pglist_data *__pgdat = NODE_DATA(page_to_nid(__pg));    \
+		(unsigned long)(__pg - __pgdat->node_mem_map) +                \
+			__pgdat->node_start_pfn;                               \
+	})
+/*
+#define __page_to_pfn(page)	((unsigned long)((page) - mem_map) +    \
 				 ARCH_PFN_OFFSET)
+*/
 #elif defined(CONFIG_DISCONTIGMEM)
 
 #define __pfn_to_page(pfn)			\
