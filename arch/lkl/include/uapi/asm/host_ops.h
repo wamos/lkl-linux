@@ -151,4 +151,6 @@ int lkl_is_running(void);
 int lkl_printf(const char *, ...);
 void lkl_bug(const char *, ...);
 
+long lkl_get_context_switches(void);
+
 #endif

@@ -7,6 +7,9 @@
 #include <asm/sched.h>
 #include <asm/syscalls.h>
 
+static long lkl_context_switches = 0;
+long lkl_get_context_switches(void) { return lkl_context_switches; }
+
 static int init_ti(struct thread_info *ti)
 {
 	ti->sched_sem = lkl_ops->sem_alloc(0);
@@ -102,7 +105,7 @@ struct task_struct *__switch_to(struct task_struct *prev,
 	struct thread_info *_next = task_thread_info(next);
 	unsigned long _prev_flags = _prev->flags;
 	struct lkl_jmp_buf _prev_jb;
-
+void *curr_tid = lkl_ops->thread_self();
 	_current_thread_info[cpu] = task_thread_info(next);
 	_next->prev_sched = prev;
 	abs_prev[cpu] = prev;
@@ -115,7 +118,7 @@ struct task_struct *__switch_to(struct task_struct *prev,
 		clear_ti_thread_flag(_prev, TIF_SCHED_JB);
 		_prev_jb = _prev->sched_jb;
 	}
-
+lkl_context_switches++;
 	lkl_ops->sem_up(_next->sched_sem);
 	if (test_bit(TIF_SCHED_JB, &_prev_flags)) {
 		lkl_ops->jmp_buf_longjmp(&_prev_jb, 1);
