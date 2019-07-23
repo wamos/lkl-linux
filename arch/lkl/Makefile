@@ -27,17 +27,6 @@ endif
 KBUILD_CFLAGS += -mno-sse -mno-mmx -mno-sse2 -mno-3dnow
 KBUILD_CFLAGS += $(call cc-option,-mno-avx,)
 
-# For gcc stack alignment is specified with -mpreferred-stack-boundary,
-# clang has the option -mstack-alignment for that purpose.
-ifneq ($(call cc-option, -mpreferred-stack-boundary=4),)
-      cc_stack_align4 := -mpreferred-stack-boundary=2
-      cc_stack_align8 := -mpreferred-stack-boundary=3
-else ifneq ($(call cc-option, -mstack-alignment=16),)
-      cc_stack_align4 := -mstack-alignment=4
-      cc_stack_align8 := -mstack-alignment=8
-endif
-KBUILD_CFLAGS += $(call cc-option,$(cc_stack_align8))
-
 ifeq ($(shell uname -s), Linux)
 NPROC=$(shell nproc)
 else # e.g., FreeBSD
