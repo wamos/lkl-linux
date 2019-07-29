@@ -83,7 +83,7 @@ static int next_sgl(void *ref, void **address, uint32_t *length)
 	return 0;
 }
 
-int spdk_read(struct spdk_cmd *cmd, struct request *req, uint64_t lba,
+static int spdk_read(struct spdk_cmd *cmd, struct request *req, uint64_t lba,
 	      uint32_t lba_count)
 {
 	struct spdk_poll_ctx *ctx = cmd->poll_ctx;
@@ -110,7 +110,7 @@ static void spdk_write_completion_cb(void *ctx, const struct spdk_nvme_cpl *cpl)
 	lkl_trigger_irq(-1, cmd->poll_ctx->irq);
 }
 
-int spdk_write(struct spdk_cmd *cmd, struct request *rq, uint64_t lba,
+static int spdk_write(struct spdk_cmd *cmd, struct request *rq, uint64_t lba,
 	       uint32_t lba_count)
 {
 	struct spdk_poll_ctx *ctx = cmd->poll_ctx;
