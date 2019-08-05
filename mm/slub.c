@@ -3425,6 +3425,12 @@ static int init_kmem_cache_nodes(struct kmem_cache *s)
 		}
 
 		init_kmem_cache_node(n);
+		node = DMA_ZONE_SGX;
+		if (s->flags & SLAB_DPDK_DMA) {
+			node = DMA_ZONE_DPDK;
+		} else if (s->flags & SLAB_SPDK_DMA) {
+			node = DMA_ZONE_SPDK;
+		}
 		s->node[node] = n;
 	}
 	return 1;

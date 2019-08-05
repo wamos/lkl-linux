@@ -17,10 +17,16 @@ struct pglist_data *first_online_pgdat(void)
 
 struct pglist_data *next_online_pgdat(struct pglist_data *pgdat)
 {
-	int nid = next_online_node(pgdat->node_id);
-
-	if (nid == MAX_NUMNODES)
+	if (!pgdat) {
 		return NULL;
+	}
+
+	int nid = pgdat->node_id + 1;
+
+	if (nid > DMA_ZONE_SPDK) {
+		return NULL;
+	}
+
 	return NODE_DATA(nid);
 }
 

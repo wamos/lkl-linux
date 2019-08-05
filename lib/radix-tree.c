@@ -2288,7 +2288,7 @@ void __init radix_tree_init(void)
 	BUILD_BUG_ON(ROOT_IS_IDR & ~GFP_ZONEMASK);
 	radix_tree_node_cachep = kmem_cache_create("radix_tree_node",
 			sizeof(struct radix_tree_node), 0,
-			SLAB_PANIC | SLAB_RECLAIM_ACCOUNT,
+			SLAB_PANIC | SLAB_RECLAIM_ACCOUNT | SLAB_SPDK_DMA,
 			radix_tree_node_ctor);
 	radix_tree_init_maxnodes();
 	ret = cpuhp_setup_state_nocalls(CPUHP_RADIX_DEAD, "lib/radix:dead",
