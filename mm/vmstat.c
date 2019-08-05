@@ -934,7 +934,7 @@ void drain_zonestat(struct zone *zone, struct per_cpu_pageset *pset)
 }
 #endif
 
-#ifdef CONFIG_NUMA
+//#ifdef CONFIG_NUMA
 void __inc_numa_state(struct zone *zone,
 				 enum numa_stat_item item)
 {
@@ -998,7 +998,7 @@ unsigned long node_page_state(struct pglist_data *pgdat,
 #endif
 	return x;
 }
-#endif
+//#endif
 
 #ifdef CONFIG_COMPACTION
 

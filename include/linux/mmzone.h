@@ -115,7 +115,7 @@ struct zone_padding {
 #define ZONE_PADDING(name)
 #endif
 
-#ifdef CONFIG_NUMA
+//#ifdef CONFIG_NUMA
 enum numa_stat_item {
 	NUMA_HIT,		/* allocated in intended node */
 	NUMA_MISS,		/* allocated in non intended node */
@@ -125,9 +125,9 @@ enum numa_stat_item {
 	NUMA_OTHER,		/* allocation from other node */
 	NR_VM_NUMA_STAT_ITEMS
 };
-#else
-#define NR_VM_NUMA_STAT_ITEMS 0
-#endif
+//#else
+//#define NR_VM_NUMA_STAT_ITEMS 0
+//#endif
 
 enum zone_stat_item {
 	/* First 128 byte cacheline (assuming 64 bit words) */
@@ -282,10 +282,10 @@ struct per_cpu_pages {
 
 struct per_cpu_pageset {
 	struct per_cpu_pages pcp;
-#ifdef CONFIG_NUMA
+//#ifdef CONFIG_NUMA
 	s8 expire;
 	u16 vm_numa_stat_diff[NR_VM_NUMA_STAT_ITEMS];
-#endif
+//#endif
 #ifdef CONFIG_SMP
 	s8 stat_threshold;
 	s8 vm_stat_diff[NR_VM_ZONE_STAT_ITEMS];
