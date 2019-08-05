@@ -16,7 +16,7 @@ void init_spdk_mem(void)
 {
 	unsigned long bootmap_size;
 	unsigned long memory_start, memory_end, mem_size;
-	mem_size = 1024 * 1024 * 50;
+	mem_size = 1024 * 1024 * 800;
 	memory_start = (unsigned long)lkl_ops->spdk_malloc(mem_size);
 	memory_end = memory_start + mem_size;
 
