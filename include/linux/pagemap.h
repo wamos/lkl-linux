@@ -15,6 +15,7 @@
 #include <linux/bitops.h>
 #include <linux/hardirq.h> /* for in_interrupt() */
 #include <linux/hugetlb_inline.h>
+#include <linux/dma-alloc.h>
 
 struct pagevec;
 
@@ -225,7 +226,7 @@ extern struct page *__page_cache_alloc(gfp_t gfp);
 #else
 static inline struct page *__page_cache_alloc(gfp_t gfp)
 {
-	return alloc_pages(gfp | GFP_SPDK_DMA, 0);
+	return alloc_pages(gfp | spdk_gfp_flags, 0);
 }
 #endif
 

@@ -1,6 +1,7 @@
 #include <linux/bootmem.h>
 #include <linux/mm.h>
 #include <linux/swap.h>
+#include <linux/dma-alloc.h>
 
 unsigned long memory_start, memory_end;
 static unsigned long _memory_start, mem_size;
@@ -9,6 +10,8 @@ unsigned long dpdk_dma_memory_start = 0;
 unsigned long dpdk_dma_memory_end = 0;
 unsigned long spdk_dma_memory_start = 0;
 unsigned long spdk_dma_memory_end = 0;
+unsigned int spdk_gfp_flags = GFP_SPDK_DMA;
+unsigned int spdk_slab_flags = SLAB_SPDK_DMA;
 
 void *empty_zero_page;
 
@@ -18,6 +21,7 @@ void init_spdk_mem(void)
 	unsigned long memory_start, memory_end, mem_size;
 	mem_size = 1024 * 1024 * 800;
 	memory_start = (unsigned long)lkl_ops->spdk_malloc(mem_size);
+	BUG_ON(!memory_start);
 	memory_end = memory_start + mem_size;
 
 	if (PAGE_ALIGN(memory_start) != memory_start) {
@@ -63,7 +67,13 @@ void init_spdk_mem(void)
 void __init bootmem_init(unsigned long mem_sz)
 {
 	unsigned long bootmap_size;
-	init_spdk_mem();
+
+	if (strstr(boot_command_line, "spdk_dma_alloc=no")) {
+		spdk_gfp_flags = 0;
+		spdk_slab_flags = 0;
+	} else {
+		init_spdk_mem();
+	}
 
 	mem_size = mem_sz;
 
