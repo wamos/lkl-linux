@@ -8,8 +8,8 @@ static unsigned long _memory_start, mem_size;
 
 unsigned long dpdk_dma_memory_start = 0;
 unsigned long dpdk_dma_memory_end = 0;
-unsigned long spdk_dma_memory_start = 0;
-unsigned long spdk_dma_memory_end = 0;
+extern unsigned long spdk_dma_memory_start;
+extern unsigned long spdk_dma_memory_end;
 unsigned int spdk_gfp_flags = GFP_SPDK_DMA;
 unsigned int spdk_slab_flags = SLAB_SPDK_DMA;
 
@@ -17,41 +17,32 @@ void *empty_zero_page;
 
 void init_spdk_mem(void)
 {
-	unsigned long bootmap_size;
-	unsigned long memory_start, memory_end, mem_size;
-	mem_size = 1024 * 1024 * 800;
-	memory_start = (unsigned long)lkl_ops->spdk_malloc(mem_size);
-	BUG_ON(!memory_start);
-	memory_end = memory_start + mem_size;
+	unsigned long bootmap_size, mem_size;
+	unsigned long min_low_pfn, max_low_pfn;
 
-	if (PAGE_ALIGN(memory_start) != memory_start) {
-		mem_size -= PAGE_ALIGN(memory_start) - memory_start;
-		memory_start = PAGE_ALIGN(memory_start);
-		mem_size = (mem_size / PAGE_SIZE) * PAGE_SIZE;
-	}
+	BUG_ON(!spdk_dma_memory_start || !spdk_dma_memory_end);
+	BUG_ON(PAGE_ALIGN(spdk_dma_memory_start) != spdk_dma_memory_start);
 
-	pr_info("spdk bootmem address range: 0x%lx - 0x%lx\n", memory_start,
-		memory_start + mem_size);
+	pr_info("spdk bootmem address range: 0x%lx - 0x%lx\n", spdk_dma_memory_start,
+		spdk_dma_memory_end);
 
 	/*
 	 * Give all the memory to the bootmap allocator, tell it to put the
 	 * boot mem_map at the start of memory.
 	 */
-	max_low_pfn = virt_to_pfn(memory_end);
-	min_low_pfn = virt_to_pfn(memory_start);
-
-	spdk_dma_memory_start = memory_start;
-	spdk_dma_memory_end = memory_end;
+	min_low_pfn = virt_to_pfn(spdk_dma_memory_start);
+	max_low_pfn = virt_to_pfn(spdk_dma_memory_end);
 
 	bootmap_size = init_bootmem_node(&dma_zones_page_data[DMA_ZONE_SPDK],
 					 min_low_pfn, min_low_pfn, max_low_pfn);
 
+	mem_size = spdk_dma_memory_end - spdk_dma_memory_start;
 	/*
 	 * Free the usable memory, we have to make sure we do not free
 	 * the bootmem bitmap so we then reserve it after freeing it :-)
 	 */
-	free_bootmem(memory_start, mem_size);
-	reserve_bootmem(memory_start, bootmap_size, BOOTMEM_DEFAULT);
+	free_bootmem(spdk_dma_memory_start, mem_size);
+	reserve_bootmem(spdk_dma_memory_start, bootmap_size, BOOTMEM_DEFAULT);
 
 	{
 		unsigned long zones_size[MAX_NR_ZONES] = {
@@ -59,8 +50,7 @@ void init_spdk_mem(void)
 		};
 
 		zones_size[ZONE_NORMAL] = (mem_size) >> PAGE_SHIFT;
-		free_area_init_node(DMA_ZONE_SPDK, zones_size,
-				    __pa(PAGE_OFFSET) >> PAGE_SHIFT, NULL);
+		free_area_init_node(DMA_ZONE_SPDK, zones_size, min_low_pfn, NULL);
 	}
 }
 
@@ -75,7 +65,8 @@ void __init bootmem_init(unsigned long mem_sz)
 		init_spdk_mem();
 	}
 
-	mem_size = mem_sz;
+	mem_size = 1024 * 1024 * 128;
+	//mem_size = mem_sz;
 
 	_memory_start = (unsigned long)lkl_ops->mem_alloc(mem_size);
 	memory_start = _memory_start;
@@ -135,5 +126,4 @@ void free_initmem(void)
 void free_mem(void)
 {
 	lkl_ops->mem_free((void *)_memory_start);
-	lkl_ops->spdk_free((void *)spdk_dma_memory_start);
 }
