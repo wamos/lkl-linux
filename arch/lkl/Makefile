@@ -16,6 +16,17 @@ else
 $(error Unrecognized platform: $(OUTPUT_FORMAT))
 endif
 
+# From arch/x86/Makefile
+#
+# Prevent GCC from generating any FP code by mistake.
+#
+# This must happen before we try the -mpreferred-stack-boundary, see:
+#
+#    https://gcc.gnu.org/bugzilla/show_bug.cgi?id=53383
+#
+KBUILD_CFLAGS += -mno-sse -mno-mmx -mno-sse2 -mno-3dnow
+KBUILD_CFLAGS += $(call cc-option,-mno-avx,)
+
 ifeq ($(shell uname -s), Linux)
 NPROC=$(shell nproc)
 else # e.g., FreeBSD
@@ -24,7 +35,7 @@ endif
 
 LDFLAGS_vmlinux += -r
 LKL_ENTRY_POINTS := lkl_start_kernel lkl_sys_halt lkl_syscall lkl_trigger_irq \
-	lkl_get_free_irq lkl_put_irq lkl_is_running lkl_get_context_switches
+	lkl_get_free_irq lkl_put_irq lkl_is_running lkl_get_context_switches  lkl_setup_x86_cpu
 
 core-y += arch/lkl/kernel/
 core-y += arch/lkl/mm/
