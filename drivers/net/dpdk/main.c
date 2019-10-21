@@ -13,11 +13,11 @@ static int __init dpdk_init(void)
 	err = misc_register(&dpdk_misc);
 	if (err < 0) {
 		return err;
-  }
+	}
 
 	printk(KERN_INFO "dpdk: module loaded, minor: %d\n", dpdk_misc.minor);
 
-  return 0;
+	return 0;
 }
 
 static void __exit dpdk_exit(void)
@@ -26,8 +26,7 @@ static void __exit dpdk_exit(void)
 
 	misc_deregister(&dpdk_misc);
 
-	list_for_each_entry_safe(i_dev, i_next, &dpdk_devs, dpdk_node) {
-		printk(KERN_INFO "%s() at %s:%d\n", __func__, __FILE__, __LINE__);
+	list_for_each_entry_safe (i_dev, i_next, &dpdk_devs, dpdk_node) {
 		list_del(&i_dev->dpdk_node);
 		dpdk_remove(i_dev);
 	}

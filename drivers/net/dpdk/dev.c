@@ -10,14 +10,29 @@ LIST_HEAD(dpdk_devs);
 
 void spdk_yield_thread(void);
 
-static int poll_thread(void *arg) {
-	struct netdev_dpdk *dev = arg;
+static int poll_thread(void *arg)
+{
+	struct netdev_dpdk *dpdk = arg;
 
 	while (!kthread_should_stop()) {
-		dpdk_rx_poll(dev);
+		dpdk_rx_poll(dpdk);
 		schedule();
 	}
 	return 0;
+}
+
+int dpdk_napi(struct napi_struct *napi, const int budget)
+{
+	struct net_device *dev = napi->dev;
+	struct netdev_dpdk *dpdk = (struct netdev_dpdk *)netdev_priv(dev);
+
+	uint64_t processed = dpdk_rx_poll(dpdk);
+
+	if (processed < budget) {
+		napi_complete_done(napi, processed);
+	}
+
+	return processed;
 }
 
 int dpdk_add(struct dpdk_dev *dev)
@@ -44,8 +59,8 @@ int dpdk_add(struct dpdk_dev *dev)
 
 	skb_queue_head_init(&dpdk->sk_buff);
 
+	netdev->hw_enc_features = NETIF_F_SG | NETIF_F_GRO;
 	// TODO
-	//netdev->hw_enc_features = NETIF_F_SG |
 	//	NETIF_F_IP_CSUM |
 	//	NETIF_F_IPV6_CSUM |
 	//	NETIF_F_HIGHDMA |
@@ -65,12 +80,14 @@ int dpdk_add(struct dpdk_dev *dev)
 
 	if (ret) {
 		printk(KERN_WARNING "failed to register dpdk device: %d\n",
-					 ret);
+		       ret);
 		free_netdev(netdev);
 		return ret;
 	}
 
 	list_add_tail(&dpdk->dpdk_node, &dpdk_devs);
+
+	netif_napi_add(netdev, &dpdk->napi, dpdk_napi, NAPI_POLL_WEIGHT);
 
 	dpdk->poll_worker = kthread_run(poll_thread, dpdk, "dpdk-poll-thread");
 
@@ -83,10 +100,11 @@ int dpdk_add(struct dpdk_dev *dev)
 	return netdev->ifindex;
 }
 
-
-void dpdk_remove(struct netdev_dpdk *dev) {
+void dpdk_remove(struct netdev_dpdk *dev)
+{
 	kthread_stop(dev->poll_worker);
 
+	netif_napi_del(&dev->napi);
 	unregister_netdev(dev->dev);
 	free_netdev(dev->dev);
 }
