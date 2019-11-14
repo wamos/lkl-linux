@@ -3,5 +3,6 @@
 
 extern struct net_device_ops dpdk_netdev_ops;
 int dpdk_rx_poll(struct netdev_dpdk *dpdk);
+void dpdk_set_mac(int portid, struct net_device *netdev);
 
 #endif
