@@ -303,6 +303,8 @@ extern struct kmem_cache *kmalloc_caches[KMALLOC_SHIFT_HIGH + 1];
 extern struct kmem_cache *kmalloc_dma_caches[KMALLOC_SHIFT_HIGH + 1];
 #endif
 
+extern struct kmem_cache *kmalloc_dpdk_caches[KMALLOC_SHIFT_HIGH + 1];
+
 /*
  * Figure out which kmalloc slab an allocation of a certain size
  * belongs to.

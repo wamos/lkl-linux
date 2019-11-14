@@ -50,7 +50,7 @@ static DECLARE_WORK(slab_caches_to_rcu_destroy_work,
  */
 #define SLAB_NEVER_MERGE (SLAB_RED_ZONE | SLAB_POISON | SLAB_STORE_USER | \
 		SLAB_TRACE | SLAB_TYPESAFE_BY_RCU | SLAB_NOLEAKTRACE | \
-		SLAB_FAILSLAB | SLAB_KASAN)
+		SLAB_FAILSLAB | SLAB_KASAN | SLAB_DPDK_DMA | SLAB_SPDK_DMA)
 
 #define SLAB_MERGE_SAME (SLAB_RECLAIM_ACCOUNT | SLAB_CACHE_DMA | \
 			 SLAB_ACCOUNT)
@@ -946,6 +946,9 @@ struct kmem_cache *kmalloc_dma_caches[KMALLOC_SHIFT_HIGH + 1] __ro_after_init;
 EXPORT_SYMBOL(kmalloc_dma_caches);
 #endif
 
+struct kmem_cache *kmalloc_dpdk_caches[KMALLOC_SHIFT_HIGH + 1] __ro_after_init;
+EXPORT_SYMBOL(kmalloc_dpdk_caches);
+
 /*
  * Conversion table for small slabs sizes / 8 to the index in the
  * kmalloc array. This is necessary for slabs < 192 since we have non power
@@ -1010,6 +1013,10 @@ struct kmem_cache *kmalloc_slab(size_t size, gfp_t flags)
 		return kmalloc_dma_caches[index];
 
 #endif
+
+	if (unlikely(flags & GFP_DPDK_DMA)) {
+		return kmalloc_dpdk_caches[index];
+	}
 	return kmalloc_caches[index];
 }
 
@@ -1089,6 +1096,24 @@ static void __init new_kmalloc_cache(int idx, slab_flags_t flags)
 					kmalloc_info[idx].size);
 }
 
+static void __init kmem_cache_dpdk_init(void) {
+	size_t i;
+	for (i = 0; i <= KMALLOC_SHIFT_HIGH; i++) {
+		struct kmem_cache *s = kmalloc_caches[i];
+
+		if (s) {
+			unsigned int size = kmalloc_size(i);
+			char *n = kasprintf(GFP_NOWAIT,
+				 "dpdk-kmalloc-%u", size);
+
+			BUG_ON(!n);
+			kmalloc_dpdk_caches[i] = create_kmalloc_cache(n,
+				size, SLAB_DPDK_DMA, 0, 0);
+			BUG_ON(!kmalloc_dpdk_caches[i]);
+		}
+	}
+}
+
 /*
  * Create the kmalloc array. Some of the regular kmalloc arrays
  * may already have been created because they were needed to
@@ -1131,6 +1156,7 @@ void __init create_kmalloc_caches(slab_flags_t flags)
 		}
 	}
 #endif
+  kmem_cache_dpdk_init();
 }
 #endif /* !CONFIG_SLOB */
 
