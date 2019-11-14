@@ -202,7 +202,7 @@ struct sk_buff *__alloc_skb(unsigned int size, gfp_t gfp_mask,
 	 */
 	size = SKB_DATA_ALIGN(size);
 	size += SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
-	data = kmalloc_reserve(size, gfp_mask, node, &pfmemalloc);
+	data = kmalloc_reserve(size, gfp_mask | GFP_DPDK_DMA, NUMA_NO_NODE, &pfmemalloc);
 	if (!data)
 		goto nodata;
 	/* kmalloc(size) might give us more room than requested.
@@ -475,7 +475,7 @@ struct sk_buff *__napi_alloc_skb(struct napi_struct *napi, unsigned int len,
 	if (sk_memalloc_socks())
 		gfp_mask |= __GFP_MEMALLOC;
 
-	data = page_frag_alloc(&nc->page, len, gfp_mask);
+	data = page_frag_alloc(&nc->page, len, gfp_mask | GFP_DPDK_DMA);
 	if (unlikely(!data))
 		return NULL;
 
@@ -5303,7 +5303,7 @@ static int pskb_carve_inside_header(struct sk_buff *skb, const u32 off,
 		gfp_mask |= __GFP_MEMALLOC;
 	data = kmalloc_reserve(size +
 			       SKB_DATA_ALIGN(sizeof(struct skb_shared_info)),
-			       gfp_mask, NUMA_NO_NODE, NULL);
+			       gfp_mask | GFP_DPDK_DMA, NUMA_NO_NODE, NULL);
 	if (!data)
 		return -ENOMEM;
 
@@ -5427,7 +5427,7 @@ static int pskb_carve_inside_nonlinear(struct sk_buff *skb, const u32 off,
 		gfp_mask |= __GFP_MEMALLOC;
 	data = kmalloc_reserve(size +
 			       SKB_DATA_ALIGN(sizeof(struct skb_shared_info)),
-			       gfp_mask, NUMA_NO_NODE, NULL);
+			       gfp_mask | GFP_DPDK_DMA, NUMA_NO_NODE, NULL);
 	if (!data)
 		return -ENOMEM;
 
