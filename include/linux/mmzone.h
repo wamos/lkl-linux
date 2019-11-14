@@ -1070,7 +1070,7 @@ extern unsigned long sgxlkl_heap_start, sgxlkl_heap_end, dpdk_dma_memory_start,
 		if ((pfn) >= (sgxlkl_heap_start >> 12) &&                      \
 		    (pfn) < (sgxlkl_heap_end >> 12))                           \
 			__nid = DMA_ZONE_SGX;                                  \
-		else if ((pfn) <= (dpdk_dma_memory_start >> 12) &&             \
+		else if ((pfn) >= (dpdk_dma_memory_start >> 12) &&             \
 			 (pfn) < (dpdk_dma_memory_end >> 12))                  \
 			__nid = DMA_ZONE_DPDK;                                 \
 		else                                                           \
