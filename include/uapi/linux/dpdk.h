@@ -5,8 +5,6 @@
 
 struct dpdk_dev {
     int portid;
-    char mac[6];
-
     struct rte_mempool *rxpool, *txpool; /* ring buffer pool */
 };
 

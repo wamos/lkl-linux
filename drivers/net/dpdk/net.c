@@ -97,6 +97,14 @@ struct net_device_ops dpdk_netdev_ops = {
 	//.ndo_tx_timeout = dpdk_tx_timeout,
 };
 
+void dpdk_set_mac(int portid, struct net_device *netdev)
+{
+	rte_eth_macaddr_get(portid, (struct ether_addr *)netdev->dev_addr);
+	ether_addr_copy(netdev->perm_addr, netdev->dev_addr);
+	printk(KERN_INFO "%s() at %s:%d: MAC: %pM\n", __func__, __FILE__,
+	       __LINE__, netdev->dev_addr);
+}
+
 static void set_rx_hash(struct rte_mbuf *rm, struct sk_buff *skb)
 {
 	enum pkt_hash_types hash_type = PKT_HASH_TYPE_NONE;

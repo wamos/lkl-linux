@@ -52,8 +52,7 @@ int dpdk_add(struct dpdk_dev *dev)
 
 	strcpy(netdev->name, "dpdk%d");
 
-	ether_addr_copy(netdev->dev_addr, (u8 *)&dev->mac);
-	ether_addr_copy(netdev->perm_addr, (u8 *)&dev->mac);
+	dpdk_set_mac(dev->portid, netdev);
 
 	netdev->netdev_ops = &dpdk_netdev_ops;
 
