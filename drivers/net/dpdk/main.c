@@ -4,11 +4,14 @@
 
 #include "ctl.h"
 #include "dev.h"
+#include "pcap_server.h"
 
 static int __init dpdk_init(void)
 {
 	int err;
 	dpdk_misc.minor = MISC_DYNAMIC_MINOR;
+
+	pcap_server_start();
 
 	err = misc_register(&dpdk_misc);
 	if (err < 0) {
@@ -24,6 +27,7 @@ static void __exit dpdk_exit(void)
 {
 	struct netdev_dpdk *i_dev, *i_next;
 
+	pcap_server_stop();
 	misc_deregister(&dpdk_misc);
 
 	list_for_each_entry_safe (i_dev, i_next, &dpdk_devs, dpdk_node) {
