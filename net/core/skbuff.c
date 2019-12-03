@@ -36,6 +36,7 @@
  *	The functions in this file will not compile correctly with gcc 2.4.x
  */
 
+#include "linux/gfp.h"
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/module.h>
@@ -1188,7 +1189,7 @@ int skb_copy_ubufs(struct sk_buff *skb, gfp_t gfp_mask)
 
 	new_frags = (__skb_pagelen(skb) + PAGE_SIZE - 1) >> PAGE_SHIFT;
 	for (i = 0; i < new_frags; i++) {
-		page = alloc_page(gfp_mask);
+		page = alloc_page(gfp_mask | GFP_DPDK_DMA);
 		if (!page) {
 			while (head) {
 				struct page *next = (struct page *)page_private(head);
@@ -1458,7 +1459,7 @@ int pskb_expand_head(struct sk_buff *skb, int nhead, int ntail,
 	if (skb_pfmemalloc(skb))
 		gfp_mask |= __GFP_MEMALLOC;
 	data = kmalloc_reserve(size + SKB_DATA_ALIGN(sizeof(struct skb_shared_info)),
-			       gfp_mask, NUMA_NO_NODE, NULL);
+			       gfp_mask | GFP_DPDK_DMA, NUMA_NO_NODE, NULL);
 	if (!data)
 		goto nodata;
 	size = SKB_WITH_OVERHEAD(ksize(data));
@@ -5260,8 +5261,9 @@ struct sk_buff *alloc_skb_with_frags(unsigned long header_len,
 				page = alloc_pages((gfp_mask & ~__GFP_DIRECT_RECLAIM) |
 						   __GFP_COMP |
 						   __GFP_NOWARN |
-						   __GFP_NORETRY,
-						   order);
+						   __GFP_NORETRY |
+						   GFP_DPDK_DMA,
+							 order);
 				if (page)
 					goto fill_page;
 				/* Do not retry other high order allocations */
@@ -5270,7 +5272,7 @@ struct sk_buff *alloc_skb_with_frags(unsigned long header_len,
 			}
 			order--;
 		}
-		page = alloc_page(gfp_mask);
+		page = alloc_page(gfp_mask | GFP_DPDK_DMA);
 		if (!page)
 			goto failure;
 fill_page:
