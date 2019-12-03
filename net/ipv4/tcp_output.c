@@ -896,6 +896,30 @@ void __init tcp_tasklet_init(void)
 	}
 }
 
+void tcp_tasklet_disable(void)
+{
+	int i;
+
+	for_each_possible_cpu(i) {
+		struct tsq_tasklet *tsq = &per_cpu(tsq_tasklet, i);
+
+    tasklet_disable_nosync(&tsq->tasklet);
+	}
+}
+EXPORT_SYMBOL(tcp_tasklet_disable);
+
+void tcp_tasklet_enable(void)
+{
+	int i;
+
+	for_each_possible_cpu(i) {
+		struct tsq_tasklet *tsq = &per_cpu(tsq_tasklet, i);
+
+    tasklet_enable(&tsq->tasklet);
+	}
+}
+EXPORT_SYMBOL(tcp_tasklet_enable);
+
 /*
  * Write buffer destructor automatically called from kfree_skb.
  * We can't xmit new skbs from this context, as we might already
