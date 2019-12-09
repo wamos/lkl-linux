@@ -1,3 +1,6 @@
+#include "linux/kern_levels.h"
+#include "linux/skbuff.h"
+#include "linux/types.h"
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/tcp.h>
@@ -106,17 +109,86 @@ static void tx_prep(struct rte_mbuf *rm, struct sk_buff *skb)
 
 static void free_skb_cb(void *addr, void *skb_ptr)
 {
-  int printf(const char* f,...); printf("%s() at %s:%d\n", __func__, __FILE__, __LINE__);
-  struct sk_buff *skb = skb_ptr;
-  kfree_skb(skb);
+	struct sk_buff *skb = skb_ptr;
+	dev_kfree_skb_any(skb);
 }
 
 static struct rte_mbuf_ext_shared_info dpdk_shinfo = {
-  .free_cb = free_skb_cb,
-  .fcb_opaque = NULL,
-  // prevent DPDK from freeing this
-  .refcnt_atomic = 1,
+	.free_cb = free_skb_cb,
+	.fcb_opaque = NULL,
+	// prevent DPDK from freeing this
+	.refcnt_atomic = 1,
 };
+
+// We don't need to free frags
+static void noop_cb(void *addr, void *skb_ptr)
+{
+}
+
+static struct rte_mbuf_ext_shared_info dpdk_frag_shinfo = {
+	.free_cb = noop_cb,
+	.fcb_opaque = NULL,
+	// prevent DPDK from freeing this
+	.refcnt_atomic = 1,
+};
+
+static zero_copy_skb(struct netdev_dpdk *dpdk, struct sk_buff *skb,
+		     struct rte_mbuf *rm)
+{
+	struct rte_mbuf *seg, *previous_seg;
+	void *addr;
+	int i;
+	size_t size = skb_is_nonlinear(skb) ? skb_headlen(skb) : skb->len;
+
+	rm->userdata = skb;
+	rte_pktmbuf_attach_extbuf(rm, skb->data, spdk_vtophys(skb->data, NULL),
+				  size, &dpdk_shinfo);
+	rm->pkt_len = skb->len;
+	rm->data_len = size;
+	rm->ol_flags |= EXT_USERDATA_ON_FREE;
+
+	previous_seg = rm;
+	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
+		const struct skb_frag_struct *frag;
+		seg = rte_pktmbuf_alloc(dpdk->txpool);
+		if (!seg) {
+			return -1;
+		}
+		previous_seg->next = seg;
+		previous_seg = seg;
+		rm->nb_segs += 1;
+
+		frag = &skb_shinfo(skb)->frags[i];
+		addr = lowmem_page_address(skb_frag_page(frag)) +
+		       frag->page_offset;
+		BUG_ON(addr < dpdk_dma_memory_start ||
+		       addr >= dpdk_dma_memory_end);
+		rte_pktmbuf_attach_extbuf(seg, addr, spdk_vtophys(addr, NULL),
+					  skb_frag_size(frag),
+					  &dpdk_frag_shinfo);
+		seg->data_len = skb_frag_size(frag);
+	}
+
+	skb = skb_dequeue(&dpdk->sk_buff);
+	return 0;
+}
+
+static int copy_skb(struct netdev_dpdk *dpdk, struct sk_buff *skb,
+		    struct rte_mbuf *rm)
+{
+	int res = 0;
+	void *pkt = rte_pktmbuf_append(rm, skb->len);
+	if (!pkt) {
+		res = -1;
+		goto free;
+	}
+	skb_copy_bits(skb, 0, pkt, skb->len);
+
+free:
+	skb = skb_dequeue(&dpdk->sk_buff);
+	kfree_skb(skb);
+	return 0;
+}
 
 extern struct spdk_mem_map *g_vtophys_map;
 static netdev_tx_t handle_tx(struct net_device *netdev)
@@ -124,7 +196,6 @@ static netdev_tx_t handle_tx(struct net_device *netdev)
 	struct netdev_dpdk *dpdk = netdev_priv(netdev);
 	struct rte_mbuf *rm;
 	struct sk_buff *skb;
-	void *pkt;
 	int n_tx;
 
 	/* Enter critical section */
@@ -135,24 +206,14 @@ static netdev_tx_t handle_tx(struct net_device *netdev)
 		rm = rte_pktmbuf_alloc(dpdk->txpool);
 		tx_prep(rm, skb);
 
-		if (skb->len > 256 && g_vtophys_map) {
-			rm->userdata = skb;
-			rte_pktmbuf_attach_extbuf(rm,
-																skb->data,
-																spdk_vtophys(skb->data, NULL),
-																skb->len,
-																&dpdk_shinfo);
-			rm->ol_flags |= EXT_USERDATA_ON_FREE;
-			rm->pkt_len = skb->len;
-			skb = skb_dequeue(&dpdk->sk_buff);
-		} else {
-			pkt = rte_pktmbuf_append(rm, skb->len);
-			if (!pkt) {
+		if (0 && skb->len > 10000 && g_vtophys_map) {
+			if (zero_copy_skb(dpdk, skb, rm) < 0) {
 				break;
-			}
-			skb_copy_bits(skb, 0, pkt, skb->len);
-			skb = skb_dequeue(&dpdk->sk_buff);
-			kfree_skb(skb);
+			};
+		} else {
+			if (copy_skb(dpdk, skb, rm) < 0) {
+				break;
+			};
 		}
 
 		if (rte_eth_tx_prepare(dpdk->portid, 0, &rm, 1) != 1) {
@@ -223,37 +284,61 @@ static void set_rx_hash(struct rte_mbuf *rm, struct sk_buff *skb)
 	skb_set_hash(skb, rm->hash.rss, hash_type);
 }
 
+static void dpdk_zerocopy_callback(struct ubuf_info *ubuf, bool success)
+{
+	rte_pktmbuf_free(ubuf->ctx);
+}
+
 int dpdk_rx_poll(struct netdev_dpdk *dpdk)
 {
 	int i;
 	uint32_t len, total_len;
 	struct sk_buff *skb;
+	struct ubuf_info *ubuf;
 	void *data;
-	struct rte_mbuf *m;
+	struct rte_mbuf *rm;
 	int nb_rx = rte_eth_rx_burst(dpdk->portid, 0, dpdk->rcv_mbuf,
 				     MAX_PKT_BURST);
 
+	if (nb_rx == 0) {
+		return 0;
+	}
+
 	for (i = 0; i < nb_rx; i++) {
-		m = dpdk->rcv_mbuf[i];
-		data = rte_pktmbuf_mtod(m, void *);
-		len = rte_pktmbuf_data_len(m);
+		rm = dpdk->rcv_mbuf[i];
+		data = rte_pktmbuf_mtod(rm, void *);
+
+		// Access headroom of mbuf: https://doc.dpdk.org/guides/prog_guide/mbuf_lib.html
+		// FIXME storing skbuf metadata in headroom is insecure (b.c of pointers)
+		BUILD_BUG_ON(sizeof(*ubuf) > RTE_PKTMBUF_HEADROOM);
+		ubuf = (struct ubuf_info *)(&(
+			(uint8_t *)(rm))[sizeof(struct rte_mbuf)]);
+		ubuf->callback = dpdk_zerocopy_callback;
+		ubuf->ctx = rm;
+
+		len = rte_pktmbuf_data_len(rm);
 		total_len += len;
 
-		skb = napi_alloc_skb(&dpdk->napi, len);
+		// We are very spacious in the pool allocator, but just in case.
+		BUG_ON(SKB_DATA_ALIGN(sizeof(struct skb_shared_info)) >
+		       rte_pktmbuf_tailroom(rm));
+		memset(rm->buf_addr + rm->data_off + rm->data_len, 0,
+		       sizeof(SKB_DATA_ALIGN(sizeof(struct skb_shared_info))));
+		skb = build_skb(data, len + SKB_DATA_ALIGN(sizeof(
+						    struct skb_shared_info)));
 		if (skb == NULL) {
 			printk(KERN_WARNING "dpdk-rx: Cannot alloc sk_buff");
-			rte_pktmbuf_free(m);
+			rte_pktmbuf_free(rm);
 			continue;
 		}
-		skb_put_data(skb, data, len);
+		skb_zcopy_set(skb, ubuf);
+
+		skb_put(skb, len);
 		// This currently makes performance worse...
 		//set_rx_hash(m, skb);
 		skb->protocol = eth_type_trans(skb, dpdk->dev);
 		skb->ip_summed = CHECKSUM_UNNECESSARY;
 
-		rte_pktmbuf_free(m);
-
-		// TODO: Replace with faster
 		napi_gro_receive(&dpdk->napi, skb);
 	}
 
