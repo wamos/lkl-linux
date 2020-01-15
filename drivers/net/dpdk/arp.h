@@ -4,4 +4,3 @@
 void set_static_arp(void);
 
 #endif
-
