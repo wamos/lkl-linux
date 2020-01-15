@@ -95,9 +95,6 @@ error:
 
 void dpdk_remove(struct netdev_dpdk *dev)
 {
-	kthread_stop(dev->poll_worker);
-
-	netif_napi_del(&dev->napi);
 	unregister_netdev(dev->dev);
 	free_netdev(dev->dev);
 }

@@ -130,6 +130,9 @@ long lkl_sys_halt(void)
 
 	is_running = false;
 
+	void dpdk_exit(void);
+	dpdk_exit();
+
 	void spdk_exit(void);
 	spdk_exit();
 

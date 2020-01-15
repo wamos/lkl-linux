@@ -23,7 +23,7 @@ static int __init dpdk_init(void)
 	return 0;
 }
 
-static void __exit dpdk_exit(void)
+void dpdk_exit(void)
 {
 	struct netdev_dpdk *i_dev, *i_next;
 
@@ -35,8 +35,14 @@ static void __exit dpdk_exit(void)
 		dpdk_remove(i_dev);
 	}
 }
+EXPORT_SYMBOL(dpdk_exit);
+
+static void __exit _dpdk_exit(void)
+{
+	dpdk_exit();
+}
 
 MODULE_LICENSE("GPL");
 
 module_init(dpdk_init);
-module_exit(dpdk_exit);
+module_exit(_dpdk_exit);
