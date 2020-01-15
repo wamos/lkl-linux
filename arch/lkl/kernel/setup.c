@@ -130,6 +130,9 @@ long lkl_sys_halt(void)
 
 	is_running = false;
 
+	void spdk_exit(void);
+	spdk_exit();
+
 	lkl_cpu_wait_shutdown();
 
 	syscalls_cleanup();

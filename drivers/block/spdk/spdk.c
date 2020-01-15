@@ -32,14 +32,21 @@ out:
 	return err;
 }
 
-static void __exit spdk_exit(void)
+void spdk_exit(void)
 {
 	spdk_remove_devices();
 	unregister_blkdev(spdk_major, "spdk");
 	misc_deregister(&spdk_misc);
 }
 
+EXPORT_SYMBOL(spdk_exit);
+
+static void __exit _spdk_exit(void)
+{
+  spdk_exit();
+}
+
 MODULE_LICENSE("GPL");
 
 module_init(spdk_init);
-module_exit(spdk_exit);
+module_exit(_spdk_exit);
