@@ -211,7 +211,6 @@ free:
 	return 0;
 }
 
-extern struct spdk_mem_map *g_vtophys_map;
 static netdev_tx_t handle_tx(struct net_device *netdev)
 {
 	struct netdev_dpdk *dpdk = netdev_priv(netdev);
