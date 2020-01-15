@@ -1,5 +1,5 @@
-#ifndef _DPDK_PCAP_SERVER_H_
-#define _DPDK_PCAP_SERVER_H_
+#ifndef _DPDK_STATS_H_
+#define _DPDK_STATS_H_
 
 #include <linux/types.h>
 
