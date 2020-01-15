@@ -236,7 +236,7 @@ static netdev_tx_t handle_tx(struct net_device *netdev)
 			};
 		}
 
-		if (unlikely(rte_eth_tx_prepare(dpdk->portid, 0, &rm, 1) !=
+		if (unlikely(rte_eth_tx_prepare(dpdk->portid, 0, &rm, 1) != 1)) {
 			printk(KERN_WARNING "dpdk: tx_prep failed\n");
 			rte_pktmbuf_free(rm);
 			// TODO free skb
