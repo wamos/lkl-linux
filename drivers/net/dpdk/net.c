@@ -346,3 +346,17 @@ int dpdk_rx_poll(struct netdev_dpdk *dpdk)
 
 	return total_len;
 }
+
+int i40e_attach_skb_to_rx_queue(struct rte_eth_dev *dev, uint16_t rx_queue_id);
+void dpdk_initialize_skb_function(void)
+{
+	int portid;
+	rte_attach_skb = dpdk_attach_skb;
+	for (portid = 0; portid < RTE_MAX_ETHPORTS; portid++) {
+		struct rte_eth_dev *device = &rte_eth_devices[portid];
+		if (!device->device) {
+			continue;
+		}
+		i40e_attach_skb_to_rx_queue(device, 0);
+	}
+}
