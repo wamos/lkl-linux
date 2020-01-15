@@ -3,8 +3,11 @@
 #include <linux/kernel.h>
 #include <linux/kthread.h>
 #include <net/sock.h>
+#include <net/net_namespace.h>
+#include <net/ip.h>
 
 #include "net.h"
+
 #include "stats.h"
 
 //#define ENABLE_PCAPSERVER
@@ -98,6 +101,10 @@ static int server_start(void *ptr)
 		set_fs(oldmm);
 
 		pcap_flush_queue();
+		struct net *net = get_net_ns_by_pid(1);
+		u64 retrans = snmp_fold_field(net->mib.tcp_statistics,
+					      TCP_MIB_RETRANSSEGS);
+		printk(KERN_INFO "##### retransmission: %d #####", retrans);
 		nic_stats_display(0);
 		nic_xstats_display(0);
 	}
