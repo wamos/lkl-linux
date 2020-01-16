@@ -124,17 +124,17 @@ long lkl_sys_halt(void)
 	long params[6] = {LINUX_REBOOT_MAGIC1,
 		LINUX_REBOOT_MAGIC2, LINUX_REBOOT_CMD_RESTART, };
 
-	err = lkl_syscall(__NR_reboot, params);
-	if (err < 0)
-		return err;
-
-	is_running = false;
-
 	void dpdk_exit(void);
 	dpdk_exit();
 
 	void spdk_exit(void);
 	spdk_exit();
+
+	err = lkl_syscall(__NR_reboot, params);
+	if (err < 0)
+		return err;
+
+	is_running = false;
 
 	lkl_cpu_wait_shutdown();
 
