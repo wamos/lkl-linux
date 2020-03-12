@@ -1,6 +1,8 @@
 #ifndef _ASM_LKL_CPU_H
 #define _ASM_LKL_CPU_H
 
+#include <asm/host_ops.h>
+
 int __lkl_cpu_get(int cpu);
 void __lkl_cpu_put(int cpu);
 
