@@ -26,7 +26,7 @@ void spdk_setup_irq(struct spdk_poll_ctx *ctx)
 	// TODO: do we want flags here?
 	// https://elixir.bootlin.com/linux/v5.2-rc4/source/include/linux/interrupt.h
 	//dev->spdk_irqaction.flags = IRQF_NOBALANCING,
-	ctx->irqaction.name = "timer";
+	ctx->irqaction.name = "spdk";
 	ctx->irqaction.dev_id = ctx;
 	ctx->irq = lkl_get_free_irq("spdk");
 	setup_irq(ctx->irq, &ctx->irqaction);

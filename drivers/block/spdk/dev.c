@@ -22,8 +22,8 @@ static void free_poll_contexts(struct spdk_poll_ctx *contexts, size_t num)
 	for (i = 0; i < num; i++) {
 		ctx = &contexts[i];
 		ctx->stop_polling = 1;
-		if (ctx->thread_id > 0) {
-			spdk_join_poll_thread(ctx->thread_id);
+		if (ctx->thread) {
+			spdk_join_poll_thread(ctx->thread);
 		}
 		spdk_teardown_irq(ctx);
 	}
@@ -34,7 +34,7 @@ static int init_poll_context(struct spdk_poll_ctx *ctx, struct spdk_device *dev,
 			     struct spdk_nvme_qpair *qpair)
 {
 	int err;
-	lkl_thread_t thread;
+	lkl_thread_t *thread = NULL;
 
 	ctx->dev = dev;
 	ctx->qpair = qpair;
@@ -49,7 +49,7 @@ static int init_poll_context(struct spdk_poll_ctx *ctx, struct spdk_device *dev,
 	if (err != 0) {
 		return -err;
 	}
-	ctx->thread_id = err;
+	ctx->thread = thread;
 	return 0;
 };
 

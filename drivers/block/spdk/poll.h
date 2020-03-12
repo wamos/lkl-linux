@@ -8,7 +8,7 @@
 #include "dev.h"
 
 struct spdk_poll_ctx {
-	lkl_thread_t thread_id;
+	lkl_thread_t *thread;
 	struct spdk_device *dev;
 	struct llist_head request_queue;
 	struct spdk_nvme_qpair *qpair;

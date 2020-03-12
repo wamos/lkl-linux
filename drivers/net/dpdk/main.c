@@ -29,11 +29,6 @@ void dpdk_exit(void)
 
 	pcap_server_stop();
 	misc_deregister(&dpdk_misc);
-
-	list_for_each_entry_safe (i_dev, i_next, &dpdk_devs, dpdk_node) {
-		list_del(&i_dev->dpdk_node);
-		dpdk_remove(i_dev);
-	}
 }
 EXPORT_SYMBOL(dpdk_exit);
 

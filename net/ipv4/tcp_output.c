@@ -2223,6 +2223,9 @@ static bool tcp_pacing_check(const struct sock *sk)
  * of queued bytes to ensure line rate.
  * One example is wifi aggregation (802.11 AMPDU)
  */
+
+void i40_clean_queue(int port_id, int queue_id);
+
 static bool tcp_small_queue_check(struct sock *sk, const struct sk_buff *skb,
 				  unsigned int factor)
 {
@@ -2239,6 +2242,11 @@ static bool tcp_small_queue_check(struct sock *sk, const struct sk_buff *skb,
 		 * after softirq/tasklet schedule.
 		 * This helps when TX completions are delayed too much.
 		 */
+		i40_clean_queue(0, 0);
+		if (refcount_read(&sk->sk_wmem_alloc) > limit) {
+			return false;
+		}
+
 		if (tcp_rtx_queue_empty(sk))
 			return false;
 
