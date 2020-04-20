@@ -173,9 +173,7 @@ static struct rte_mbuf_ext_shared_info dpdk_frag_shinfo = {
 int dpdk_attach_skb(struct rte_mbuf *rm)
 {
 	size_t size = 1500; // FIXME: MTU
-	lkl_cpu_get();
 	struct sk_buff *skb = dev_alloc_skb(size);
-	lkl_cpu_put();
 	if (!skb) {
 		return -ENOMEM;
 	}
@@ -289,14 +287,16 @@ static netdev_tx_t handle_tx(struct net_device *netdev)
 		if (unlikely(rte_eth_tx_prepare(dpdk->portid, 0, &rm, 1) !=
 			     1)) {
 			printk(KERN_WARNING "dpdk: tx_prep failed\n");
-			rte_pktmbuf_free(rm);
+			// FIXME: we cannot call rte_pktmbuf_free here since the inlined code makes our stack space exceed
+			//rte_pktmbuf_free(rm);
 			// TODO free skb
 			break;
 		}
 		n_tx = rte_eth_tx_burst(dpdk->portid, 0, &rm, 1);
 		if (unlikely(n_tx != 1)) {
 			printk(KERN_WARNING "dpdk: tx_burst failed\n");
-			rte_pktmbuf_free(rm);
+			// FIXME: we cannot call rte_pktmbuf_free here since the inlined code makes our stack space exceed
+			//rte_pktmbuf_free(rm);
 			// TODO free skb
 		}
 	}
@@ -353,13 +353,12 @@ static void set_rx_hash(struct rte_mbuf *rm, struct sk_buff *skb)
 	skb_set_hash(skb, rm->hash.rss, hash_type);
 }
 
-#define MAX_PKT_BURST 16
 static void dpdk_rx_poll(struct netdev_dpdk *dpdk, struct napi_struct *napi,
 			 int queue)
 {
 	// burst receive context by rump dpdk code
-	struct rte_mbuf *rcv_mbuf[MAX_PKT_BURST];
 	uint16_t i;
+	struct rte_mbuf **rcv_mbuf = dpdk->threads[queue].rcv_mbuf;
 	uint16_t nb_rx =
 		rte_eth_rx_burst(dpdk->portid, queue, rcv_mbuf, MAX_PKT_BURST);
 
@@ -367,7 +366,6 @@ static void dpdk_rx_poll(struct netdev_dpdk *dpdk, struct napi_struct *napi,
 		return;
 	}
 
-	lkl_cpu_get();
 
 	for (i = 0; i < nb_rx; i++) {
 		struct rte_mbuf *rm = rcv_mbuf[i];
@@ -391,7 +389,6 @@ static void dpdk_rx_poll(struct netdev_dpdk *dpdk, struct napi_struct *napi,
 	}
 
 	napi_gro_flush(napi, false);
-	lkl_cpu_put();
 }
 
 void spdk_yield_thread(void);
@@ -402,11 +399,14 @@ int dpdk_poll_thread(void *arg)
 	struct dpdk_thread *thread = arg;
 	int *polling = &thread->dpdk->stop_polling;
 
+	unsigned cpu = ((thread->queue + 1) % lkl_max_cpu_no);
 	// bind each queue to a different cpu
-	lkl_set_current_cpu(thread->queue % lkl_max_cpu_no);
+	lkl_set_current_cpu(cpu);
 
 	while (!*polling) {
+		lkl_cpu_get();
 		dpdk_rx_poll(thread->dpdk, &thread->napi, thread->queue);
+		lkl_cpu_put();
 		spdk_yield_thread();
 	}
 

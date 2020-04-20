@@ -4,13 +4,21 @@
 #include <uapi/linux/dpdk.h>
 #include <linux/netdevice.h>
 
+// avoid conflict between stdlib.h abs() and the kernel macro
+#undef abs
+// avoid re-definition of wchar_t in gcc's stddev.h
+#define _WCHAR_T_DEFINED_
+#include <rte_mbuf.h>
+
 extern struct list_head dpdk_devs;
 
+#define MAX_PKT_BURST 16
 struct dpdk_thread {
 	lkl_thread_t *thread;
 	int queue;
 	struct netdev_dpdk *dpdk;
 	struct napi_struct napi;
+	struct rte_mbuf *rcv_mbuf[MAX_PKT_BURST];
 };
 
 struct netdev_dpdk {
