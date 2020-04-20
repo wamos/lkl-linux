@@ -6,6 +6,10 @@
 
 #include <spdk/stdinc.h>
 #include <spdk/nvme.h>
+extern struct spdk_mempool *spdk_dma_mempool;
+
+// TODO seem to be the maximum size
+#define SPDK_DATA_POOL_MAX_SIZE 1048576
 
 // This code runs in userspace
 static void spdk_read_completion_cb(void *ctx, const struct spdk_nvme_cpl *cpl)
@@ -19,11 +23,9 @@ static void spdk_read_completion_cb(void *ctx, const struct spdk_nvme_cpl *cpl)
 	//printk(KERN_INFO "%s() at %s:%d\n", __func__, __FILE__, __LINE__);
 	//blk_mq_end_request(req, BLK_STS_OK);
 
-	// The polling loop run in "userspace" and not in the context
-	// of lkl. Therefore we need to enter the kernel space to complete
-	// our request
-	llist_add(&req->spdk_queue, &cmd->poll_ctx->irq_queue);
-	lkl_trigger_irq(-1, cmd->poll_ctx->irq);
+	lkl_cpu_get();
+	blk_mq_end_request(req, BLK_STS_OK);
+	lkl_cpu_put();
 }
 
 static void reset_sgl(void *ref, uint32_t sgl_offset)
@@ -84,7 +86,7 @@ static int next_sgl(void *ref, void **address, uint32_t *length)
 }
 
 static int spdk_read(struct spdk_cmd *cmd, struct request *req, uint64_t lba,
-	      uint32_t lba_count)
+		     uint32_t lba_count)
 {
 	struct spdk_poll_ctx *ctx = cmd->poll_ctx;
 
@@ -99,19 +101,58 @@ static void spdk_write_completion_cb(void *ctx, const struct spdk_nvme_cpl *cpl)
 	struct spdk_cmd *cmd = (struct spdk_cmd *)ctx;
 	struct request *req = cmd->req;
 
+	if (cmd->spdk_buf) {
+		spdk_mempool_put(spdk_dma_mempool, cmd->spdk_buf);
+		cmd->spdk_buf = NULL;
+	}
+
 	// TODO better error handling
 	BUG_ON(spdk_nvme_cpl_is_error(cpl));
 
-	//printk(KERN_INFO "%s() at %s:%d\n", __func__, __FILE__, __LINE__);
-	//blk_mq_end_request(req, BLK_STS_OK);
-	//BUG_ON(ioctl(cmd->poll_ctx->dev->ctl_fd, SPDK_REQ_COMPLETE, (long)req) < 0);
-
-	llist_add(&req->spdk_queue, &cmd->poll_ctx->irq_queue);
-	lkl_trigger_irq(-1, cmd->poll_ctx->irq);
+	lkl_cpu_get();
+	blk_mq_end_request(req, BLK_STS_OK);
+	lkl_cpu_put();
 }
 
-static int spdk_write(struct spdk_cmd *cmd, struct request *rq, uint64_t lba,
-	       uint32_t lba_count)
+static int spdk_write_copy(struct spdk_cmd *cmd, struct request *rq,
+			   uint64_t lba, uint32_t lba_count)
+{
+	struct bio_vec bvec;
+	struct req_iterator iter;
+	struct spdk_poll_ctx *ctx = cmd->poll_ctx;
+	int rc;
+	char *buf = NULL;
+	size_t len = blk_rq_bytes(rq);
+
+	BUG_ON(len > SPDK_DATA_POOL_MAX_SIZE);
+
+	buf = cmd->spdk_buf = spdk_mempool_get(spdk_dma_mempool);
+
+	if (unlikely(!buf)) {
+		return -ENOMEM;
+	}
+
+	rq_for_each_segment (bvec, cmd->req, iter) {
+	  // Copying from bv_page would not work in systems with MMU.
+	  // However in lkl memory is always mapped.
+	  memcpy(buf, page_address(bvec.bv_page) + bvec.bv_offset,
+	         bvec.bv_len);
+	  buf += bvec.bv_len;
+	}
+
+	rc = spdk_nvme_ns_cmd_write(ctx->dev->ns_entry.ns, ctx->qpair,
+				    cmd->spdk_buf, lba, lba_count,
+				    spdk_write_completion_cb, cmd, 0);
+
+	if (unlikely(rc < 0)) {
+		spdk_mempool_put(spdk_dma_mempool, cmd->spdk_buf);
+		cmd->spdk_buf = NULL;
+		return rc;
+	}
+}
+
+static int spdk_write_zerocopy(struct spdk_cmd *cmd, struct request *rq,
+			       uint64_t lba, uint32_t lba_count)
 {
 	struct spdk_poll_ctx *ctx = cmd->poll_ctx;
 
@@ -120,14 +161,38 @@ static int spdk_write(struct spdk_cmd *cmd, struct request *rq, uint64_t lba,
 				       0, reset_sgl, next_sgl);
 }
 
-static void process_request(struct request *rq, struct spdk_poll_ctx *ctx)
+static int spdk_write(struct spdk_cmd *cmd, struct request *rq, uint64_t lba,
+		      uint32_t lba_count)
+{
+	struct bio_vec bvec;
+	struct req_iterator iter;
+	int zerocopy = 1;
+
+	rq_for_each_segment (bvec, cmd->req, iter) {
+		// Copying from bv_page would not work in systems with MMU.
+		// However in lkl memory is always mapped.
+		unsigned long addr = (unsigned long)page_address(bvec.bv_page);
+		if (addr > spdk_dma_memory_end ||
+		    addr < spdk_dma_memory_begin) {
+			zerocopy = 0;
+			break;
+		}
+	}
+
+	if (zerocopy) {
+		return spdk_write_zerocopy(cmd, rq, lba, lba_count);
+	} else {
+		return spdk_write_copy(cmd, rq, lba, lba_count);
+	}
+}
+
+void spdk_process_request(struct request *rq, struct spdk_poll_ctx *ctx)
 {
 	struct spdk_nvme_ns *ns = ctx->dev->ns_entry.ns;
 	struct spdk_cmd *cmd = blk_mq_rq_to_pdu(rq);
 	size_t len = blk_rq_bytes(rq);
 	uint32_t lba_count;
 	uint64_t lba;
-	int status;
 	int sector_size;
 
 	if (!len) {
@@ -150,10 +215,10 @@ static void process_request(struct request *rq, struct spdk_poll_ctx *ctx)
 	//	//return spdk_discard();
 	//	//break;
 	case REQ_OP_READ:
-		status = spdk_read(cmd, rq, lba, lba_count);
+		spdk_read(cmd, rq, lba, lba_count);
 		break;
 	case REQ_OP_WRITE:
-		status = spdk_write(cmd, rq, lba, lba_count);
+		spdk_write(cmd, rq, lba, lba_count);
 		break;
 	}
 }
@@ -165,12 +230,16 @@ static void poll_request_queue(struct spdk_poll_ctx *ctx)
 	node = llist_del_first(&ctx->request_queue);
 	if (node) {
 		req = llist_entry(node, struct request, spdk_queue);
-		process_request(req, ctx);
+		spdk_process_request(req, ctx);
 	}
 }
+extern int lkl_max_cpu_no;
 
 void spdk_poll_thread(struct spdk_poll_ctx *ctx)
 {
+	unsigned cpu = ((ctx->idx + 1) % lkl_max_cpu_no);
+	// bind each queue to a different cpu
+	lkl_set_current_cpu(cpu);
 	while (!ctx->stop_polling) {
 		poll_request_queue(ctx);
 		spdk_nvme_qpair_process_completions(ctx->qpair, 0);

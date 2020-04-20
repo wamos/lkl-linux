@@ -13,6 +13,7 @@
 
 static DEFINE_IDR(spdk_index_idr);
 int spdk_major;
+extern unsigned long spdk_dma_mempool_size;
 
 static void free_poll_contexts(struct spdk_poll_ctx *contexts, size_t num)
 {
@@ -31,13 +32,14 @@ static void free_poll_contexts(struct spdk_poll_ctx *contexts, size_t num)
 }
 
 static int init_poll_context(struct spdk_poll_ctx *ctx, struct spdk_device *dev,
-			     struct spdk_nvme_qpair *qpair)
+			     struct spdk_nvme_qpair *qpair, size_t idx)
 {
 	int err;
 	lkl_thread_t *thread = NULL;
 
 	ctx->dev = dev;
 	ctx->qpair = qpair;
+	ctx->idx = idx;
 
 	spdk_setup_irq(ctx);
 
@@ -59,7 +61,8 @@ int spdk_add(struct spdk_device **spdk_dev, struct lkl_spdk_ns_entry *entry)
 	struct spdk_poll_ctx *poll_contexts;
 	struct gendisk *disk;
 	int err;
-	int idx, i;
+	int idx;
+	size_t i;
 	int bs;
 	sector_t size;
 
@@ -78,9 +81,8 @@ int spdk_add(struct spdk_device **spdk_dev, struct lkl_spdk_ns_entry *entry)
 	dev->tag_set.ops = &spdk_mq_ops;
 	// TODO one queue per core!
 	dev->tag_set.nr_hw_queues = dev->ns_entry.qpairs_num;
-	// TODO get the queue depth from spdk_nvme_ctrlr_get_default_io_qpair_opts
-	// and using io_queue_size from spdk_nvme_io_qpair_opts
-	dev->tag_set.queue_depth = 128;
+
+	dev->tag_set.queue_depth = spdk_dma_mempool_size;
 	dev->tag_set.numa_node = NUMA_NO_NODE;
 	dev->tag_set.cmd_size = sizeof(struct spdk_cmd);
 	dev->tag_set.flags = BLK_MQ_F_SHOULD_MERGE | BLK_MQ_F_SG_MERGE;
@@ -95,7 +97,7 @@ int spdk_add(struct spdk_device **spdk_dev, struct lkl_spdk_ns_entry *entry)
 
 	for (i = 0; i < entry->qpairs_num; i++) {
 		err = init_poll_context(&poll_contexts[i], dev,
-					dev->ns_entry.qpairs[i]);
+					dev->ns_entry.qpairs[i], i);
 		if (err < 0) {
 			goto out_free_poll_ctx;
 		}

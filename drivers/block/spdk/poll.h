@@ -10,6 +10,7 @@
 struct spdk_poll_ctx {
 	lkl_thread_t *thread;
 	struct spdk_device *dev;
+	size_t idx;
 	struct llist_head request_queue;
 	struct spdk_nvme_qpair *qpair;
 	int stop_polling;
@@ -28,5 +29,6 @@ struct spdk_cmd {
 };
 
 void spdk_poll_thread(struct spdk_poll_ctx *ctx);
+void spdk_process_request(struct request *rq, struct spdk_poll_ctx *ctx);
 
 #endif

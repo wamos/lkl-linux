@@ -43,7 +43,7 @@ EXPORT_SYMBOL(spdk_exit);
 
 static void __exit _spdk_exit(void)
 {
-  spdk_exit();
+	spdk_exit();
 }
 
 MODULE_LICENSE("GPL");
