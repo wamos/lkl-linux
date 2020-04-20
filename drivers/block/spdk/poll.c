@@ -6,6 +6,9 @@
 
 #include <spdk/stdinc.h>
 #include <spdk/nvme.h>
+
+extern unsigned long spdk_dma_memory_begin;
+extern unsigned long spdk_dma_memory_end;
 extern struct spdk_mempool *spdk_dma_mempool;
 
 // TODO seem to be the maximum size
