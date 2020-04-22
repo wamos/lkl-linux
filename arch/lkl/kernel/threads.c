@@ -10,6 +10,12 @@
 static long lkl_context_switches = 0;
 long lkl_get_context_switches(void) { return lkl_context_switches; }
 
+int __preempt_count = 0;
+EXPORT_SYMBOL(__preempt_count);
+
+struct task_struct *current_task = 0;
+EXPORT_SYMBOL(current_task);
+
 static int init_ti(struct thread_info *ti)
 {
 	ti->sched_sem = lkl_ops->sem_alloc(0);
@@ -119,6 +125,8 @@ void *curr_tid = lkl_ops->thread_self();
 		_prev_jb = _prev->sched_jb;
 	}
 lkl_context_switches++;
+
+	current_task = next;
 	lkl_ops->sem_up(_next->sched_sem);
 	if (test_bit(TIF_SCHED_JB, &_prev_flags)) {
 		lkl_ops->jmp_buf_longjmp(&_prev_jb, 1);

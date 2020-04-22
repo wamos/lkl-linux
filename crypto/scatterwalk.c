@@ -20,6 +20,19 @@
 #include <linux/module.h>
 #include <linux/scatterlist.h>
 
+void *scatterwalk_map(struct scatter_walk *walk)
+{
+	return kmap_atomic(scatterwalk_page(walk)) +
+	       offset_in_page(walk->offset);
+}
+EXPORT_SYMBOL_GPL(scatterwalk_map);
+
+void scatterwalk_unmap(void *vaddr)
+{
+	kunmap_atomic(vaddr);
+}
+EXPORT_SYMBOL_GPL(scatterwalk_unmap);
+
 static inline void memcpy_dir(void *buf, void *sgdata, size_t nbytes, int out)
 {
 	void *src = out ? buf : sgdata;

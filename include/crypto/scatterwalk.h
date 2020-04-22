@@ -74,10 +74,11 @@ static inline struct page *scatterwalk_page(struct scatter_walk *walk)
 	return sg_page(walk->sg) + (walk->offset >> PAGE_SHIFT);
 }
 
-static inline void scatterwalk_unmap(void *vaddr)
-{
-	kunmap_atomic(vaddr);
-}
+void scatterwalk_unmap(void *vaddr);
+//static inline void scatterwalk_unmap(void *vaddr)
+//{
+//	kunmap_atomic(vaddr);
+//}
 
 static inline void scatterwalk_start(struct scatter_walk *walk,
 				     struct scatterlist *sg)
@@ -86,11 +87,12 @@ static inline void scatterwalk_start(struct scatter_walk *walk,
 	walk->offset = sg->offset;
 }
 
-static inline void *scatterwalk_map(struct scatter_walk *walk)
-{
-	return kmap_atomic(scatterwalk_page(walk)) +
-	       offset_in_page(walk->offset);
-}
+void *scatterwalk_map(struct scatter_walk *walk);
+//static inline void *scatterwalk_map(struct scatter_walk *walk)
+//{
+//	return kmap_atomic(scatterwalk_page(walk)) +
+//	       offset_in_page(walk->offset);
+//}
 
 static inline void scatterwalk_pagedone(struct scatter_walk *walk, int out,
 					unsigned int more)

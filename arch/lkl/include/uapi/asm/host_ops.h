@@ -120,6 +120,9 @@ struct lkl_host_operations {
 	void *(*dpdk_malloc)(unsigned long);
 	void *(*dpdk_free)(void *);
 
+	void* (*mem_executable_alloc)(unsigned long);
+	void (*mem_executable_free)(void *, unsigned long size);
+
 	unsigned long long (*time)(void);
 
 	void* (*timer_alloc)(void (*fn)(void *), void *arg);
@@ -137,6 +140,16 @@ struct lkl_host_operations {
 
 	long (*sysconf)(int name);
 };
+
+/**
+ * Sets up x86 CPU info needed for checks when enabling hardware acceleration
+ * of e.g. crypto primitives.
+ */
+int lkl_setup_x86_cpu(char *vendor_id,
+		       unsigned int model,
+		       unsigned int family,
+		       char *capabilities,
+		       unsigned long long xfeature_mask);
 
 /**
  * lkl_start_kernel - registers the host operations and starts the kernel

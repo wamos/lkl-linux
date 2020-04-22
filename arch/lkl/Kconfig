@@ -43,6 +43,8 @@ config LKL
        select ARCH_USE_QUEUED_SPINLOCKS
        select GENERIC_BUG if BUG
        select GENERIC_CLOCKEVENTS_BROADCAST
+       select CONFIG_MODULES_USE_ELF_RELA
+       select CRYPTO_SIMD
 
 config OUTPUTFORMAT
        string

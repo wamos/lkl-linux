@@ -680,6 +680,7 @@ config HAVE_MOD_ARCH_SPECIFIC
 
 config MODULES_USE_ELF_RELA
 	bool
+	default y
 	help
 	  Modules only use ELF RELA relocations.  Modules with ELF REL
 	  relocations will give an error.
