@@ -25,6 +25,7 @@ struct spdk_cmd {
 	struct spdk_poll_ctx *poll_ctx;
 	struct request *req;
 	struct req_iterator iter;
+	unsigned long long ts;
 	uint32_t iov_offset;
 };
 

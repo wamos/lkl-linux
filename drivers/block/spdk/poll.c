@@ -3,6 +3,7 @@
 
 #include <linux/llist.h>
 #include <asm/cpu.h>
+#include <linux/trace-helper.h>
 
 #include <spdk/stdinc.h>
 #include <spdk/nvme.h>
@@ -12,19 +13,58 @@ extern unsigned long spdk_dma_memory_end;
 extern struct spdk_mempool *spdk_dma_mempool;
 
 // TODO seem to be the maximum size
-#define SPDK_DATA_POOL_MAX_SIZE 1048576
+#define SPDK_DATA_POOL_MAX_SIZE (1048576 * 2)
 
 // This code runs in userspace
-static void spdk_read_completion_cb(void *ctx, const struct spdk_nvme_cpl *cpl)
+static void spdk_read_copy_completion_cb(void *ctx,
+					 const struct spdk_nvme_cpl *cpl)
+{
+	struct spdk_cmd *cmd = (struct spdk_cmd *)ctx;
+	struct bio_vec bvec;
+	struct request *req = cmd->req;
+	struct req_iterator iter;
+	char *p = (char *)cmd->spdk_buf;
+	rq_for_each_segment (bvec, req, iter) {
+		memcpy(page_address(bvec.bv_page) + bvec.bv_offset, p,
+		       bvec.bv_len);
+		p += bvec.bv_len;
+	}
+
+	spdk_mempool_put(spdk_dma_mempool, cmd->spdk_buf);
+	cmd->spdk_buf = NULL;
+	// TODO error handling: spdk_nvme_cpl_is_error(cpl)
+
+	lkl_cpu_get();
+	blk_mq_end_request(req, BLK_STS_OK);
+	lkl_cpu_put();
+}
+
+// This code runs in userspace
+static void spdk_read_zerocopy_completion_cb(void *ctx,
+					     const struct spdk_nvme_cpl *cpl)
 {
 	struct spdk_cmd *cmd = (struct spdk_cmd *)ctx;
 	struct request *req = cmd->req;
+	struct req_iterator iter;
+	struct bio_vec bvec;
+	unsigned total = 0;
+
+	//ticks_t tsc = rdtsc_e();
+	//ticks_t ticks = rdtsc_e() - bio->ts;
 
 	// TODO better error handling
 	BUG_ON(spdk_nvme_cpl_is_error(cpl));
 
-	//printk(KERN_INFO "%s() at %s:%d\n", __func__, __FILE__, __LINE__);
-	//blk_mq_end_request(req, BLK_STS_OK);
+	//rq_for_each_segment(bvec, req, iter) {
+	//	total += bvec.bv_len;
+	//}
+
+	//int printf(const char* f,...); printf("%s() at %s:%d: ts: %e\n", __func__, __FILE__, __LINE__, (double)tsc - req->bio->ts);
+
+	//req->bio->ts = tsc;
+
+	//unsigned long bw = (unsigned long)((double)total / ((double)ticks / tsc_hz));
+	//int printf(const char* f,...); printf("%s() at %s:%d: queue_size=%u, throughput: %lu bytes/s (t: %llu, size: %u, freq: %lu)\n", __func__, __FILE__, __LINE__, atomic_read(&queue_size), bw, ticks, total, tsc_hz);
 
 	lkl_cpu_get();
 	blk_mq_end_request(req, BLK_STS_OK);
@@ -88,14 +128,34 @@ static int next_sgl(void *ref, void **address, uint32_t *length)
 	return 0;
 }
 
-static int spdk_read(struct spdk_cmd *cmd, struct request *req, uint64_t lba,
-		     uint32_t lba_count)
+static int spdk_read_zerocopy(struct spdk_cmd *cmd, struct request *req,
+			      uint64_t lba, uint32_t lba_count)
 {
 	struct spdk_poll_ctx *ctx = cmd->poll_ctx;
 
 	return spdk_nvme_ns_cmd_readv(ctx->dev->ns_entry.ns, ctx->qpair, lba,
-				      lba_count, spdk_read_completion_cb, cmd,
-				      0, reset_sgl, next_sgl);
+				      lba_count,
+				      spdk_read_zerocopy_completion_cb, cmd, 0,
+				      reset_sgl, next_sgl);
+}
+
+static int spdk_read_copy(struct spdk_cmd *cmd, struct request *req,
+			  uint64_t lba, uint32_t lba_count)
+{
+	size_t len = blk_rq_bytes(req);
+	int rc;
+
+	BUG_ON(len > SPDK_DATA_POOL_MAX_SIZE);
+	cmd->spdk_buf = spdk_mempool_get(spdk_dma_mempool);
+	rc = spdk_nvme_ns_cmd_read(cmd->poll_ctx->dev->ns_entry.ns,
+				   cmd->poll_ctx->qpair, cmd->spdk_buf, lba,
+				   lba_count, spdk_read_copy_completion_cb, cmd,
+				   0);
+	if (unlikely(rc < 0)) {
+		spdk_mempool_put(spdk_dma_mempool, cmd->spdk_buf);
+		cmd->spdk_buf = NULL;
+		return rc;
+	}
 }
 
 // This code runs in userspace
@@ -103,6 +163,10 @@ static void spdk_write_completion_cb(void *ctx, const struct spdk_nvme_cpl *cpl)
 {
 	struct spdk_cmd *cmd = (struct spdk_cmd *)ctx;
 	struct request *req = cmd->req;
+
+	//ticks_t tsc = rdtsc_e();
+	//int printf(const char* f,...); printf("%s() at %s:%d: ts: %e\n", __func__, __FILE__, __LINE__, (double)tsc - req->bio->ts);
+	//req->bio->ts = tsc;
 
 	if (cmd->spdk_buf) {
 		spdk_mempool_put(spdk_dma_mempool, cmd->spdk_buf);
@@ -136,11 +200,11 @@ static int spdk_write_copy(struct spdk_cmd *cmd, struct request *rq,
 	}
 
 	rq_for_each_segment (bvec, cmd->req, iter) {
-	  // Copying from bv_page would not work in systems with MMU.
-	  // However in lkl memory is always mapped.
-	  memcpy(buf, page_address(bvec.bv_page) + bvec.bv_offset,
-	         bvec.bv_len);
-	  buf += bvec.bv_len;
+		// Copying from bv_page would not work in systems with MMU.
+		// However in lkl memory is always mapped.
+		memcpy(buf, page_address(bvec.bv_page) + bvec.bv_offset,
+		       bvec.bv_len);
+		buf += bvec.bv_len;
 	}
 
 	rc = spdk_nvme_ns_cmd_write(ctx->dev->ns_entry.ns, ctx->qpair,
@@ -209,6 +273,10 @@ void spdk_process_request(struct request *rq, struct spdk_poll_ctx *ctx)
 	lba_count = len / sector_size;
 	lba = blk_rq_pos(rq) * 512 / sector_size;
 
+	//ticks_t tsc = rdtsc_e();
+	//int printf(const char* f,...); printf("%s() at %s:%d: ts: %e\n", __func__, __FILE__, __LINE__, (double)tsc - rq->bio->ts);
+	//rq->bio->ts = tsc;
+
 	switch (req_op(rq)) {
 	//case REQ_OP_FLUSH:
 	//	fprintf(stderr, "%s() at %s:%d: flush\n", __func__, __FILE__, __LINE__);
@@ -218,7 +286,8 @@ void spdk_process_request(struct request *rq, struct spdk_poll_ctx *ctx)
 	//	//return spdk_discard();
 	//	//break;
 	case REQ_OP_READ:
-		spdk_read(cmd, rq, lba, lba_count);
+		//spdk_read(cmd, rq, lba, lba_count);
+		spdk_read_zerocopy(cmd, rq, lba, lba_count);
 		break;
 	case REQ_OP_WRITE:
 		spdk_write(cmd, rq, lba, lba_count);
@@ -226,12 +295,15 @@ void spdk_process_request(struct request *rq, struct spdk_poll_ctx *ctx)
 	}
 }
 
+//extern atomic_t queue_length;
+
 static void poll_request_queue(struct spdk_poll_ctx *ctx)
 {
 	struct llist_node *node;
 	struct request *req;
 	node = llist_del_first(&ctx->request_queue);
 	if (node) {
+		//atomic_dec(&queue_length);
 		req = llist_entry(node, struct request, spdk_queue);
 		spdk_process_request(req, ctx);
 	}
@@ -243,9 +315,13 @@ void spdk_poll_thread(struct spdk_poll_ctx *ctx)
 	unsigned cpu = ((ctx->idx + 1) % lkl_max_cpu_no);
 	// bind each queue to a different cpu
 	lkl_set_current_cpu(cpu);
+
 	while (!ctx->stop_polling) {
 		poll_request_queue(ctx);
-		spdk_nvme_qpair_process_completions(ctx->qpair, 0);
-		spdk_yield_thread();
+
+		int ret = spdk_nvme_qpair_process_completions(ctx->qpair, 0);
+		BUG_ON(ret < 0);
+		usleep(10);
+		//spdk_yield_thread();
 	}
 }
