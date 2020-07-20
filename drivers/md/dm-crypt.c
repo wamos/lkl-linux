@@ -2742,6 +2742,7 @@ static int crypt_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		if (ret)
 			goto bad;
 	}
+	set_bit(DM_CRYPT_FORCE_INLINE, &cc->flags);
 
 	ret = crypt_ctr_cipher(ti, argv[0], argv[1]);
 	if (ret < 0)

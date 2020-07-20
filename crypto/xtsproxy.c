@@ -95,8 +95,8 @@ static struct skcipher_alg xtsproxy_skcipher = {
 	.base = {
 		.cra_name			= "xts(aes)",
 		.cra_driver_name	= "xts-aes-xtsproxy",
-		/* make sure we don't use it unless requested explicitly */
-		.cra_priority		= 0,
+		/* prefer it over builtin aes-ni */
+		.cra_priority		= 402,
 		/* .cra_flags			= CRYPTO_ALG_INTERNAL, */
 		.cra_blocksize		= AES_BLOCK_SIZE,
 		.cra_ctxsize		= sizeof(struct xtsproxy_ctx),
