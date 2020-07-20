@@ -3,6 +3,7 @@
 #include <linux/bvec.h>
 #include <linux/blkdev.h>
 #include <linux/blk-mq.h>
+#include <linux/trace-helper.h>
 #include <spdk/stdinc.h>
 #include <spdk/nvme.h>
 
@@ -12,12 +13,35 @@
 #include "poll.h"
 #include "irq.h"
 
+//static unsigned n_request = 0;
+//char buf[4096];
+
+//atomic_t queue_length = ATOMIC_INIT(0);
+
 static blk_status_t spdk_queue_rq(struct blk_mq_hw_ctx *hctx,
 				  const struct blk_mq_queue_data *bd)
 {
 	struct request *rq = bd->rq;
 	struct spdk_poll_ctx *ctx = hctx->driver_data;
 	int status = BLK_STS_IOERR;
+	//TRACE_TIME(1000);
+
+	//if (n_request % 1000) {
+	//  mm_segment_t fs;
+	//  struct file *f = filp_open("/proc/vmstat", O_RDONLY, 0);
+	//  if (f) {
+	//    fs = get_fs();
+	//    while (1) {
+	//      int r = f->f_op->read(f, buf, sizeof(buf), &f->f_pos);
+	//      if (r <= 0) {
+	//        break;
+	//      }
+	//      write(1, buf, r);
+	//    }
+	//    set_fs(fs);
+	//  }
+	//}
+	//n_request++;
 
 	blk_mq_start_request(rq);
 
@@ -28,7 +52,6 @@ static blk_status_t spdk_queue_rq(struct blk_mq_hw_ctx *hctx,
 		//case REQ_OP_DISCARD:
 		//	fprintf(stderr, "%s() at %s:%d: discard\n", __func__, __FILE__, __LINE__);
 		//	//return spdk_discard();
-
 		//	//break;
 	case REQ_OP_READ:
 	case REQ_OP_WRITE:
