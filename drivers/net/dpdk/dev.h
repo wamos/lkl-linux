@@ -12,7 +12,7 @@
 
 extern struct list_head dpdk_devs;
 
-#define MAX_PKT_BURST 16
+#define MAX_PKT_BURST 8
 struct dpdk_thread {
 	lkl_thread_t *thread;
 	int queue;
