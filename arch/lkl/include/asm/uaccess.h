@@ -63,8 +63,10 @@ extern unsigned long sgxlkl_heap_end;
 static inline int __access_ok(unsigned long addr, unsigned long size)
 {
     // FIXME: Figure out the upper bound. Hint: the binary is mapped beyond sgxlkl_heap_end
-	//return !sgxlkl_heap_start || !sgxlkl_heap_end || (sgxlkl_heap_start <= addr && addr < sgxlkl_heap_end);
-	return !sgxlkl_heap_start || sgxlkl_heap_start <= addr;
+    //return !sgxlkl_heap_start || !sgxlkl_heap_end || (sgxlkl_heap_start <= addr && addr < sgxlkl_heap_end);
+    //return !sgxlkl_heap_start || sgxlkl_heap_start <= addr;
+    // since we use kernel modules this no longer works
+    return 1;
 }
 
 #define __access_ok __access_ok
