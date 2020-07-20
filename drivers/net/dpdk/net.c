@@ -1,4 +1,5 @@
 #include "asm/cpu.h"
+#include "asm/smp.h"
 #include <linux/dpdk.h>
 #include <linux/kdb.h>
 #include <linux/kern_levels.h>
@@ -12,6 +13,7 @@
 #include <linux/sctp.h>
 #include <linux/trace-helper.h>
 #include <linux/kthread.h>
+#include <linux/trace-helper.h>
 #include <sys/ioctl.h>
 
 #include "dev.h"
@@ -353,42 +355,78 @@ static void set_rx_hash(struct rte_mbuf *rm, struct sk_buff *skb)
 	skb_set_hash(skb, rm->hash.rss, hash_type);
 }
 
+static void trace_calls_print_with_queue(struct trace_data *t)
+{
+	struct trace_context *ctx = t->ctx;
+	ticks_t diff;
+	ticks_t cycles = rdtsc_e();
+
+	if (!ctx->start_cycles) {
+		ctx->start_cycles = rdtsc_s();
+		return;
+	}
+
+	diff = cycles - ctx->start_cycles;
+
+	if (diff > ctx->frequency) {
+		printf("%s() at %s:%d queue (%u): calls/cycles: %lu/%lu\n",
+		       ctx->function, ctx->filename, ctx->line, t->cycles,
+		       ctx->counter, diff);
+		ctx->start_cycles = cycles;
+		ctx->counter = 0;
+	}
+
+	// FIXME: not thread-safe
+	ctx->counter++;
+}
+
+static unsigned dpdk_queue_i = 0;
+
 static void dpdk_rx_poll(struct netdev_dpdk *dpdk, struct napi_struct *napi,
 			 int queue)
+//int queue, struct trace_context *ctx)
 {
 	// burst receive context by rump dpdk code
 	uint16_t i;
 	struct rte_mbuf **rcv_mbuf = dpdk->threads[queue].rcv_mbuf;
-	uint16_t nb_rx =
-		rte_eth_rx_burst(dpdk->portid, queue, rcv_mbuf, MAX_PKT_BURST);
+	while (1) {
+		uint16_t nb_rx = rte_eth_rx_burst(dpdk->portid, queue, rcv_mbuf,
+						  MAX_PKT_BURST);
 
-	if (nb_rx == 0) {
-		return;
+		if (nb_rx == 0) {
+			return;
+		}
+
+		//{
+		//  struct trace_data __attribute__((__cleanup__(trace_calls_print_with_queue))) __trace_data = {
+		//    .ctx = ctx,
+		//    .cycles = lkl_get_current_cpu(),
+		//  };
+		//}
+
+		for (i = 0; i < nb_rx; i++) {
+			struct rte_mbuf *rm = rcv_mbuf[i];
+			uint32_t len = rte_pktmbuf_pkt_len(rm);
+			struct sk_buff *skb = rm->userdata;
+
+			skb->len = len;
+			skb_set_tail_pointer(skb, skb->len);
+			skb->dev = dpdk->dev;
+			skb->protocol = eth_type_trans(skb, dpdk->dev);
+
+			skb->ip_summed = CHECKSUM_UNNECESSARY;
+
+			// This currently makes performance worse...
+			//set_rx_hash(m, skb);
+
+			napi_gro_receive(napi, skb);
+			dpdk_log_skb(skb);
+
+			rte_pktmbuf_free(rm);
+		}
+
+		napi_gro_flush(napi, false);
 	}
-
-
-	for (i = 0; i < nb_rx; i++) {
-		struct rte_mbuf *rm = rcv_mbuf[i];
-		uint32_t len = rte_pktmbuf_pkt_len(rm);
-		struct sk_buff *skb = rm->userdata;
-
-		skb->len = len;
-		skb_set_tail_pointer(skb, skb->len);
-		skb->dev = dpdk->dev;
-		skb->protocol = eth_type_trans(skb, dpdk->dev);
-
-		skb->ip_summed = CHECKSUM_UNNECESSARY;
-
-		// This currently makes performance worse...
-		//set_rx_hash(m, skb);
-
-		napi_gro_receive(napi, skb);
-		dpdk_log_skb(skb);
-
-		rte_pktmbuf_free(rm);
-	}
-
-	napi_gro_flush(napi, false);
 }
 
 void spdk_yield_thread(void);
@@ -398,6 +436,14 @@ int dpdk_poll_thread(void *arg)
 {
 	struct dpdk_thread *thread = arg;
 	int *polling = &thread->dpdk->stop_polling;
+	//struct trace_context __trace_ctx_2 = {
+	//	.start_cycles = 0,
+	//	.counter = 1,
+	//	.frequency = 3000000000,
+	//	.function = __func__,
+	//	.filename = __FILE__,
+	//	.line = __LINE__,
+	//};
 
 	unsigned cpu = ((thread->queue + 1) % lkl_max_cpu_no);
 	// bind each queue to a different cpu
@@ -406,6 +452,7 @@ int dpdk_poll_thread(void *arg)
 	while (!*polling) {
 		lkl_cpu_get();
 		dpdk_rx_poll(thread->dpdk, &thread->napi, thread->queue);
+		//dpdk_rx_poll(thread->dpdk, &thread->napi, thread->queue, &__trace_ctx_2);
 		lkl_cpu_put();
 		spdk_yield_thread();
 	}
