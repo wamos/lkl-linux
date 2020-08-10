@@ -1,7 +1,11 @@
 #include "dev.h"
 
+#include "linux/sched/prio.h"
 #include <linux/idr.h>
 #include <linux/blk-mq.h>
+#include <linux/sched.h>
+#include <linux/kthread.h>
+#include <uapi/linux/sched/types.h>	/* For struct sched_param */
 #include <spdk/stdinc.h>
 #include <spdk/nvme.h>
 
@@ -9,7 +13,6 @@
 #include "blk_mq.h"
 #include "thread.h"
 #include "poll.h"
-#include "irq.h"
 
 static DEFINE_IDR(spdk_index_idr);
 int spdk_major;
@@ -22,11 +25,9 @@ static void free_poll_contexts(struct spdk_poll_ctx *contexts, size_t num)
 
 	for (i = 0; i < num; i++) {
 		ctx = &contexts[i];
-		ctx->stop_polling = 1;
 		if (ctx->thread) {
-			spdk_join_poll_thread(ctx->thread);
+			kthread_stop(ctx->thread);
 		}
-		spdk_teardown_irq(ctx);
 	}
 	kfree(contexts);
 }
@@ -35,22 +36,25 @@ static int init_poll_context(struct spdk_poll_ctx *ctx, struct spdk_device *dev,
 			     struct spdk_nvme_qpair *qpair, size_t idx)
 {
 	int err;
-	lkl_thread_t *thread = NULL;
+	struct task_struct *thread = NULL;
 
 	ctx->dev = dev;
 	ctx->qpair = qpair;
 	ctx->idx = idx;
+	init_waitqueue_head(&ctx->wait_queue);
 
-	spdk_setup_irq(ctx);
-
-	init_llist_head(&ctx->request_queue);
-	init_llist_head(&ctx->irq_queue);
-
-	err = spdk_spawn_poll_thread(&thread,
-				     (void (*)(void *))(spdk_poll_thread), ctx);
-	if (err != 0) {
-		return -err;
+	thread = kthread_create((int (*)(void *))(spdk_poll_thread), ctx, "spdk-%ld", idx);
+	if (IS_ERR(thread)) {
+		return PTR_ERR(thread);
 	}
+	struct sched_param sched_priority = { .sched_priority = 0 };
+	///* Set maximum priority to preempt all other threads on this CPU. */
+	if (sched_setscheduler_nocheck(thread, SCHED_IDLE, &sched_priority))
+		pr_warn("Failed to set suspend thread scheduler on CPU %d\n", smp_processor_id());
+
+	kthread_bind(thread, idx);
+	wake_up_process(thread);
+
 	ctx->thread = thread;
 	return 0;
 };
@@ -119,7 +123,6 @@ int spdk_add(struct spdk_device **spdk_dev, struct lkl_spdk_ns_entry *entry)
 	blk_queue_logical_block_size(dev->blk_mq_queue, bs);
 	blk_queue_physical_block_size(dev->blk_mq_queue, bs);
 	blk_queue_io_min(dev->blk_mq_queue, bs);
-	blk_queue_softirq_done(dev->blk_mq_queue, spdk_softirq_done_fn);
 
 	dev->blk_mq_queue->queuedata = dev;
 

@@ -1,5 +1,6 @@
 #include "blk_mq.h"
 
+#include "linux/smp.h"
 #include <linux/bvec.h>
 #include <linux/blkdev.h>
 #include <linux/blk-mq.h>
@@ -11,17 +12,15 @@
 
 #include "dev.h"
 #include "poll.h"
-#include "irq.h"
 
 //static unsigned n_request = 0;
 //char buf[4096];
-
-//atomic_t queue_length = ATOMIC_INIT(0);
 
 static blk_status_t spdk_queue_rq(struct blk_mq_hw_ctx *hctx,
 				  const struct blk_mq_queue_data *bd)
 {
 	struct request *rq = bd->rq;
+	int r;
 	struct spdk_poll_ctx *ctx = hctx->driver_data;
 	int status = BLK_STS_IOERR;
 	//TRACE_TIME(1000);
@@ -55,9 +54,17 @@ static blk_status_t spdk_queue_rq(struct blk_mq_hw_ctx *hctx,
 		//	//break;
 	case REQ_OP_READ:
 	case REQ_OP_WRITE:
-		llist_add(&rq->spdk_queue, &ctx->request_queue);
+		ctx->queue_length++;
+		spdk_process_request(rq, ctx);
 		status = BLK_STS_OK;
 		break;
+	}
+	do {
+		r = spdk_nvme_qpair_process_completions(ctx->qpair, 0);
+	} while (r > 0);
+
+	if (ctx->queue_length) {
+		wake_up_interruptible(&ctx->wait_queue);
 	}
 
 	return status;

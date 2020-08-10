@@ -6,6 +6,7 @@
 #include "ctl.h"
 #include "thread.h"
 #include "poll.h"
+#include "spdk.h"
 
 static int __init spdk_init(void)
 {
@@ -35,8 +36,9 @@ out:
 void spdk_exit(void)
 {
 	spdk_remove_devices();
-	unregister_blkdev(spdk_major, "spdk");
-	misc_deregister(&spdk_misc);
+	//XXX cannot unregister this
+	//unregister_blkdev(spdk_major, "spdk");
+	//misc_deregister(&spdk_misc);
 }
 
 EXPORT_SYMBOL(spdk_exit);

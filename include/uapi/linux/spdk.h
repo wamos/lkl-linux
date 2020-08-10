@@ -5,6 +5,7 @@
 
 #define SPDK_CTL_ADD 0x4C80
 #define SPDK_REQ_COMPLETE 0x4C81
+#define SPDK_CTL_SHUTDOWN 0x4C82
 
 // Same definition as spdk_ctrlr_entry in spdk_context.h.
 // Copied here to break dependency cycles.

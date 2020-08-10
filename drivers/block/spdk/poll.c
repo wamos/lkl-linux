@@ -1,9 +1,13 @@
 #include "poll.h"
+#include "linux/smp.h"
 #include "thread.h"
 
 #include <linux/llist.h>
+#include <linux/kthread.h>
+#include <uapi/linux/sched/types.h>
 #include <asm/cpu.h>
 #include <linux/trace-helper.h>
+#include <linux/delay.h>
 
 #include <spdk/stdinc.h>
 #include <spdk/nvme.h>
@@ -34,9 +38,8 @@ static void spdk_read_copy_completion_cb(void *ctx,
 	cmd->spdk_buf = NULL;
 	// TODO error handling: spdk_nvme_cpl_is_error(cpl)
 
-	lkl_cpu_get();
+	cmd->poll_ctx->queue_length--;
 	blk_mq_end_request(req, BLK_STS_OK);
-	lkl_cpu_put();
 }
 
 // This code runs in userspace
@@ -66,9 +69,8 @@ static void spdk_read_zerocopy_completion_cb(void *ctx,
 	//unsigned long bw = (unsigned long)((double)total / ((double)ticks / tsc_hz));
 	//int printf(const char* f,...); printf("%s() at %s:%d: queue_size=%u, throughput: %lu bytes/s (t: %llu, size: %u, freq: %lu)\n", __func__, __FILE__, __LINE__, atomic_read(&queue_size), bw, ticks, total, tsc_hz);
 
-	lkl_cpu_get();
+	cmd->poll_ctx->queue_length--;
 	blk_mq_end_request(req, BLK_STS_OK);
-	lkl_cpu_put();
 }
 
 static void reset_sgl(void *ref, uint32_t sgl_offset)
@@ -176,9 +178,8 @@ static void spdk_write_completion_cb(void *ctx, const struct spdk_nvme_cpl *cpl)
 	// TODO better error handling
 	BUG_ON(spdk_nvme_cpl_is_error(cpl));
 
-	lkl_cpu_get();
+	cmd->poll_ctx->queue_length--;
 	blk_mq_end_request(req, BLK_STS_OK);
-	lkl_cpu_put();
 }
 
 static int spdk_write_copy(struct spdk_cmd *cmd, struct request *rq,
@@ -274,7 +275,6 @@ void spdk_process_request(struct request *rq, struct spdk_poll_ctx *ctx)
 	lba = blk_rq_pos(rq) * 512 / sector_size;
 
 	//ticks_t tsc = rdtsc_e();
-	//int printf(const char* f,...); printf("%s() at %s:%d: ts: %e\n", __func__, __FILE__, __LINE__, (double)tsc - rq->bio->ts);
 	//rq->bio->ts = tsc;
 
 	switch (req_op(rq)) {
@@ -295,33 +295,28 @@ void spdk_process_request(struct request *rq, struct spdk_poll_ctx *ctx)
 	}
 }
 
-//extern atomic_t queue_length;
-
-static void poll_request_queue(struct spdk_poll_ctx *ctx)
-{
-	struct llist_node *node;
-	struct request *req;
-	node = llist_del_first(&ctx->request_queue);
-	if (node) {
-		//atomic_dec(&queue_length);
-		req = llist_entry(node, struct request, spdk_queue);
-		spdk_process_request(req, ctx);
-	}
-}
 extern int lkl_max_cpu_no;
+extern int spdk_shutdown;
 
-void spdk_poll_thread(struct spdk_poll_ctx *ctx)
+int spdk_poll_thread(struct spdk_poll_ctx *ctx)
 {
-	unsigned cpu = ((ctx->idx + 1) % lkl_max_cpu_no);
-	// bind each queue to a different cpu
-	lkl_set_current_cpu(cpu);
+	//struct sched_param sched_priority = { .sched_priority = MAX_RT_PRIO-1 };
+	/* Set maximum priority to preempt all other threads on this CPU. */
+	//if (sched_setscheduler_nocheck(current, SCHED_FIFO, &sched_priority))
+	//	pr_warn("Failed to set suspend thread scheduler on CPU %d\n", smp_processor_id());
 
-	while (!ctx->stop_polling) {
-		poll_request_queue(ctx);
-
+	int i = 0;
+	while (!kthread_should_stop()) {
 		int ret = spdk_nvme_qpair_process_completions(ctx->qpair, 0);
 		BUG_ON(ret < 0);
-		usleep(10);
-		//spdk_yield_thread();
+		i++;
+		if (ctx->queue_length == 0) {
+			wait_event_interruptible(ctx->wait_queue, ctx->queue_length > 0 || kthread_should_stop());
+			i = 0;
+		} else if (i > 1000 && ret == 0) {
+			i = 0;
+			schedule();
+		}
 	}
+	return 0;
 }
