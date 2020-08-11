@@ -5,6 +5,7 @@
 #include "dev.h"
 #include "blk_mq.h"
 #include "spdk.h"
+#include "debug.h"
 
 static DEFINE_MUTEX(spdk_index_mutex);
 
@@ -20,6 +21,8 @@ static long spdk_control_ioctl(struct file *file, unsigned int cmd,
 		ret = spdk_add(&dev, (struct lkl_spdk_ns_entry *)parm);
 		mutex_unlock(&spdk_index_mutex);
 		break;
+	case SPDK_CTL_DEBUG:
+		spdk_dump_all_files();
 	case SPDK_CTL_SHUTDOWN:
 		spdk_exit();
 		return 0;
