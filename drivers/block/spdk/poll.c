@@ -307,16 +307,18 @@ int spdk_poll_thread(struct spdk_poll_ctx *ctx)
 
 	int i = 0;
 	while (!kthread_should_stop()) {
-		int ret = spdk_nvme_qpair_process_completions(ctx->qpair, 0);
-		BUG_ON(ret < 0);
-		i++;
 		if (ctx->queue_length == 0) {
 			wait_event_interruptible(ctx->wait_queue, ctx->queue_length > 0 || kthread_should_stop());
 			i = 0;
-		} else if (i > 1000 && ret == 0) {
+		}
+		int ret = spdk_nvme_qpair_process_completions(ctx->qpair, 0);
+		BUG_ON(ret < 0);
+
+		if (i > 1000 && ret == 0) {
 			i = 0;
 			schedule();
 		}
+		i++;
 	}
 	return 0;
 }
