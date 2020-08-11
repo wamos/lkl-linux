@@ -1,3 +1,5 @@
+#include <linux/spinlock.h>
+#include <linux/spinlock_types.h>
 #include <linux/sched.h>
 #include <linux/sched/signal.h>
 #include <linux/rcupdate.h>
@@ -27,6 +29,7 @@ void spdk_dump_all_files(void) {
                 }
             }
         }
+        spin_unlock(&files->file_lock);
         put_files_struct(files);
     }
     rcu_read_unlock();
