@@ -525,8 +525,11 @@ static void lkl_ipi_thread(void *arg)
 		if (!(pending & (LKL_IPI_RESCHED)))
 			continue;
 
-		if (current == idle_host_tasks[cpu]) {
-			struct thread_info *ti = task_thread_info(current);
+		struct task_struct *task = current;
+
+		// FIXME: This looks racy to me, since we don't own the cpu `current` can change.
+		if (task == idle_host_tasks[cpu]) {
+			struct thread_info *ti = task_thread_info(task);
 			int ret;
 
 			ret = __cpu_try_get_lock(cpu, 1);
