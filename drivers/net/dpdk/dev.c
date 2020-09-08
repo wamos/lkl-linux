@@ -8,6 +8,9 @@
 #include "net.h"
 #include "thread.h"
 
+extern int sgxlkl_gso_offload;
+extern int sgxlkl_chksum_offload;
+
 int dpdk_add(struct dpdk_dev *dev)
 {
 	unsigned i;
@@ -28,9 +31,14 @@ int dpdk_add(struct dpdk_dev *dev)
 
 	dpdk_set_mac(dev->portid, netdev);
 
-	enum { FEATURES = NETIF_F_GRO | NETIF_F_HIGHDMA | NETIF_F_RXCSUM |
-			  NETIF_F_HW_CSUM | NETIF_F_SG | NETIF_F_TSO |
-			  NETIF_F_TSO_ECN | NETIF_F_TSO6 | 0 };
+	u64 FEATURES = NETIF_F_GRO | NETIF_F_HIGHDMA |
+			  NETIF_F_SG | NETIF_F_TSO_ECN | 0 ;
+
+	if(sgxlkl_gso_offload)
+		FEATURES |= (NETIF_F_TSO | NETIF_F_TSO6);
+
+	if(sgxlkl_gso_offload)
+		FEATURES |= (NETIF_F_RXCSUM | NETIF_F_HW_CSUM);
 
 	netdev->features |= FEATURES;
 	netdev->hw_features |= FEATURES;
