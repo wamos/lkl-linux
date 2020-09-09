@@ -15,6 +15,7 @@
 extern unsigned long spdk_dma_memory_begin;
 extern unsigned long spdk_dma_memory_end;
 extern struct spdk_mempool *spdk_dma_mempool;
+extern int sgxlkl_spdk_zerocopy;
 
 // TODO seem to be the maximum size
 #define SPDK_DATA_POOL_MAX_SIZE (1048576 * 2)
@@ -287,7 +288,10 @@ void spdk_process_request(struct request *rq, struct spdk_poll_ctx *ctx)
 	//	//break;
 	case REQ_OP_READ:
 		//spdk_read(cmd, rq, lba, lba_count);
-		spdk_read_zerocopy(cmd, rq, lba, lba_count);
+		if(sgxlkl_spdk_zerocopy)
+			spdk_read_zerocopy(cmd, rq, lba, lba_count);
+		else
+			spdk_read_copy(cmd, rq, lba, lba_count);
 		break;
 	case REQ_OP_WRITE:
 		spdk_write(cmd, rq, lba, lba_count);

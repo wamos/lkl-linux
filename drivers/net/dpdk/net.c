@@ -36,6 +36,8 @@ uint64_t spdk_vtophys(void *buf, uint64_t *size);
 #define DPDK_SENDING 1 /* Bit 1 = 0x02*/
 //#define DPDK_DEBUG
 
+extern int sgxlkl_dpdk_zerocopy;
+
 static int dpdk_open(struct net_device *netdev)
 {
 	struct netdev_dpdk *dpdk = netdev_priv(netdev);
@@ -265,10 +267,18 @@ static netdev_tx_t handle_tx(struct net_device *netdev)
 		rm = rte_pktmbuf_alloc(dpdk->txpool);
 		tx_prep(rm, skb);
 
-		if (zero_copy_skb(dpdk, skb, rm) < 0) {
-			printk(KERN_WARNING "dpdk: zero copy failed\n");
-			break;
-		};
+		if(sgxlkl_dpdk_zerocopy){
+			if (zero_copy_skb(dpdk, skb, rm) < 0) {
+				printk(KERN_WARNING "dpdk: zero copy failed\n");
+				break;
+			};
+		}
+		else{
+			if(copy_skb(dpdk, skb, rm) < 0) {
+				printk(KERN_WARNING "dpdk: copy failed\n");
+				break;
+			}
+		}
 		//if (skb->len > 1000) {
 		//  if (zero_copy_skb(dpdk, skb, rm) < 0) {
 		//    break;
