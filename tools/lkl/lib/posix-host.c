@@ -333,7 +333,6 @@ struct lkl_host_operations lkl_host_ops = {
 	.tls_get = tls_get,
 	.time = time_ns,
 	.timer_alloc = timer_alloc,
-	.timer_set_oneshot = timer_set_oneshot,
 	.timer_free = timer_free,
 	.print = print,
 	.mem_alloc = malloc,

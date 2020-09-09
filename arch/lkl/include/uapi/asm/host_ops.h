@@ -126,7 +126,7 @@ struct lkl_host_operations {
 	unsigned long long (*time)(void);
 
 	void* (*timer_alloc)(void (*fn)(void *), void *arg);
-	int (*timer_set_oneshot)(void *timer, unsigned long delta);
+	int (*timer_start)(void *timer);
 	void (*timer_free)(void *timer);
 
 	void* (*ioremap)(long addr, int size);
