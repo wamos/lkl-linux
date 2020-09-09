@@ -117,7 +117,7 @@ static struct skcipher_alg xtsproxy_skcipher = {
 static int __init xtsproxy_init(void)
 {
 	if(sgxlkl_xts_proxy){
-		xtsproxy_skcipher.cra_priority = 402;
+		xtsproxy_skcipher.base.cra_priority = 402;
 	}
 	return crypto_register_skcipher(&xtsproxy_skcipher);
 }
