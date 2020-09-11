@@ -525,14 +525,10 @@ static void lkl_ipi_thread(void *arg)
 		if (!(pending & (LKL_IPI_RESCHED)))
 			continue;
 
-		struct task_struct *task = current;
 
-		// FIXME: This looks racy to me, since we don't own the cpu `current` can change.
-		if (task == idle_host_tasks[cpu]) {
-			struct thread_info *ti = task_thread_info(task);
-			int ret;
-
-			ret = __cpu_try_get_lock(cpu, 1);
+		if (current == idle_host_tasks[cpu]) {
+			struct task_struct *task;
+			int ret = __cpu_try_get_lock(cpu, 1);
 			if (ret<=0) {
 				__cpu_try_get_unlock(cpu, ret, 1);
 				if (!ret)
@@ -540,6 +536,12 @@ static void lkl_ipi_thread(void *arg)
 				else
 					break;
 			}
+			// check if current still is an idle task
+			task = current;
+			if (task != idle_host_tasks[cpu]) {
+				continue;
+			}
+			struct thread_info *ti = task_thread_info(task);
 
 			cpus[cpu].owner = ti->tid;
 
