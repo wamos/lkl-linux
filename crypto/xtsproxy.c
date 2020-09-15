@@ -5,8 +5,6 @@
 #include <crypto/aes.h>
 #include <asm/fpu/api.h>
 
-extern int sgxlkl_xts_proxy;
-
 struct xtsproxy_ctx {
 	struct crypto_skcipher *xts_aesni;
 	struct crypto_skcipher *xts_generic;
@@ -98,7 +96,7 @@ static struct skcipher_alg xtsproxy_skcipher = {
 		.cra_name			= "xts(aes)",
 		.cra_driver_name	= "xts-aes-xtsproxy",
 		/* make sure we don't use it unless requested explicitly */
-		.cra_priority		= 0,
+		.cra_priority		= 402,
 		/* .cra_flags			= CRYPTO_ALG_INTERNAL, */
 		.cra_blocksize		= AES_BLOCK_SIZE,
 		.cra_ctxsize		= sizeof(struct xtsproxy_ctx),
@@ -116,9 +114,6 @@ static struct skcipher_alg xtsproxy_skcipher = {
 
 static int __init xtsproxy_init(void)
 {
-	if(sgxlkl_xts_proxy){
-		xtsproxy_skcipher.base.cra_priority = 402;
-	}
 	return crypto_register_skcipher(&xtsproxy_skcipher);
 }
 
