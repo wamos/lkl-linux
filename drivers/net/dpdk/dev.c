@@ -37,7 +37,7 @@ int dpdk_add(struct dpdk_dev *dev)
 	if(sgxlkl_gso_offload)
 		FEATURES |= (NETIF_F_TSO | NETIF_F_TSO6);
 
-	if(sgxlkl_gso_offload)
+	if(sgxlkl_chksum_offload)
 		FEATURES |= (NETIF_F_RXCSUM | NETIF_F_HW_CSUM);
 
 	netdev->features |= FEATURES;
