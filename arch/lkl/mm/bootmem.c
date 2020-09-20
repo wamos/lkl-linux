@@ -69,7 +69,7 @@ void __init bootmem_init(unsigned long mem_sz)
 			     dpdk_dma_memory_end);
 	}
 
-	mem_size = 1024 * 1024 * 128;
+	mem_size = 1024 * 1024 * 256;
 	//mem_size = mem_sz;
 
 	//_memory_start = (unsigned long)lkl_ops->mem_alloc(mem_size);
