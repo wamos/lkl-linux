@@ -539,6 +539,7 @@ static void lkl_ipi_thread(void *arg)
 			// check if current still is an idle task
 			task = current;
 			if (task != idle_host_tasks[cpu]) {
+				__cpu_try_get_unlock(cpu, ret, 1);
 				continue;
 			}
 			struct thread_info *ti = task_thread_info(task);
