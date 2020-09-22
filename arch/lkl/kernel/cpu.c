@@ -525,7 +525,6 @@ static void lkl_ipi_thread(void *arg)
 		if (!(pending & (LKL_IPI_RESCHED)))
 			continue;
 
-
 		if (current == idle_host_tasks[cpu]) {
 			struct task_struct *task;
 			int ret = __cpu_try_get_lock(cpu, 1);
@@ -536,14 +535,16 @@ static void lkl_ipi_thread(void *arg)
 				else
 					break;
 			}
-			// check if current still is an idle task
 			task = current;
+			// CPU might have switch to new task after our check.
+			// If this is the case, we release up the CPU and let the other task continue
 			if (task != idle_host_tasks[cpu]) {
 				__cpu_try_get_unlock(cpu, ret, 1);
+				lkl_cpu_put();
 				continue;
 			}
-			struct thread_info *ti = task_thread_info(task);
 
+			struct thread_info *ti = task_thread_info(task);
 			cpus[cpu].owner = ti->tid;
 
 			local_irq_disable();
