@@ -8,9 +8,11 @@ set -e
 script_dir=$(cd $(dirname ${BASH_SOURCE:-$0}); pwd)
 hijack_script=${script_dir}/../bin/lkl-hijack.sh
 
-num_runs="1"
+#num_runs="1"
+num_runs="10"
 test_name="TCP_STREAM"
-use_taskset="0"
+#use_taskset="0"
+use_taskset="1"
 host_ip="localhost"
 taskset_cmd="taskset -c 1"
 test_len=10  # second

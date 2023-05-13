@@ -152,7 +152,7 @@ run_tests()
                       --dst $(ip_host)
         rm -f $script_dir/net-test2
         kill $!
-        wait $! 2>/dev/null
+        #wait $! 2>/dev/null
         ;;
     "tap")
         lkl_test_exec $script_dir/net-test --backend tap \

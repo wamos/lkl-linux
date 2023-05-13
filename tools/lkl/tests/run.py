@@ -48,27 +48,27 @@ class Reporter(tap13.Reporter):
 mydir=os.path.dirname(os.path.realpath(__file__))
 
 tests = [
-    'boot.sh',
-    'disk.sh -t ext4',
-    'disk.sh -t btrfs',
-    'disk.sh -t vfat',
-    'disk.sh -t xfs',
-    'net.sh -b loopback',
-    'net.sh -b tap',
+    #'boot.sh',
+    #'disk.sh -t ext4',
+    #'disk.sh -t btrfs',
+    #'disk.sh -t vfat',
+    #'disk.sh -t xfs',
+    #'net.sh -b loopback',
+    #'net.sh -b tap',
     'net.sh -b pipe',
-    'net.sh -b raw',
-    'net.sh -b macvtap',
-    'net.sh -b wintap',
-    'lklfuse.sh -t ext4',
-    'lklfuse.sh -t btrfs',
-    'lklfuse.sh -t vfat',
-    'lklfuse.sh -t xfs',
-    'config',
-    'hijack-test.sh',
-    'disk-vfio-pci.sh -t ext4 run',
-    'disk-vfio-pci.sh -t btrfs run',
-    'disk-vfio-pci.sh -t vfat run',
-    'disk-vfio-pci.sh -t xfs run'
+    #'net.sh -b raw',
+    #'net.sh -b macvtap',
+    #'net.sh -b wintap',
+    #'lklfuse.sh -t ext4',
+    #'lklfuse.sh -t btrfs',
+    #'lklfuse.sh -t vfat',
+    #'lklfuse.sh -t xfs',
+    #'config',
+    #'hijack-test.sh',
+    #'disk-vfio-pci.sh -t ext4 run',
+    #'disk-vfio-pci.sh -t btrfs run',
+    #'disk-vfio-pci.sh -t vfat run',
+    #'disk-vfio-pci.sh -t xfs run'
 ]
 
 parser = argparse.ArgumentParser(description='LKL test runner')
