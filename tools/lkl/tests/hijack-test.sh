@@ -735,9 +735,9 @@ tap_prepare
 if ! lkl_test_cmd test -c /dev/net/tun &>/dev/null; then
     lkl_test_plan 0 "hijack tap backend tests"
     echo "missing /dev/net/tun"
-elif [ -z "$LKL_HOST_CONFIG_JSMN" ]; then
-    lkl_test_plan 0 "hijack tap backend tests"
-    echo "no json support"
+#elif [ -z "$LKL_HOST_CONFIG_JSMN" ]; then
+#    lkl_test_plan 0 "hijack tap backend tests"
+#    echo "no json support"
 else
     lkl_test_plan 23 "hijack tap backend tests"
     lkl_test_run 1 test_tap_setup
