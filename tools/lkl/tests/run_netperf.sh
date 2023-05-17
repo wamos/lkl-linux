@@ -8,8 +8,8 @@ set -e
 script_dir=$(cd $(dirname ${BASH_SOURCE:-$0}); pwd)
 hijack_script=${script_dir}/../bin/lkl-hijack.sh
 
-#num_runs="1"
-num_runs="10"
+num_runs="1"
+#num_runs="10"
 test_name="TCP_STREAM"
 #use_taskset="0"
 use_taskset="1"
@@ -94,6 +94,6 @@ for i in `seq $num_runs`; do
     echo Test: $i
     set -x
     $taskset_cmd ${hijack_script} netperf -p $TEST_NETSERVER_PORT -H $host_ip \
-		         -t $test_name -l $test_len
+		         -t $test_name -r 1024,1024
     set +x
 done
