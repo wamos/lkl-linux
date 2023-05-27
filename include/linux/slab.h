@@ -39,6 +39,9 @@
 #define SLAB_STORE_USER		((slab_flags_t __force)0x00010000U)
 /* Panic if kmem_cache_create() fails */
 #define SLAB_PANIC		((slab_flags_t __force)0x00040000U)
+
+#define SLAB_DPDK_DMA		((slab_flags_t __force)0x10000000U)
+#define SLAB_SPDK_DMA		((slab_flags_t __force)0x40000000U)
 /*
  * SLAB_TYPESAFE_BY_RCU - **WARNING** READ THIS!
  *
@@ -350,6 +353,8 @@ static __always_inline enum kmalloc_cache_type kmalloc_type(gfp_t flags)
 	else
 		return KMALLOC_CGROUP;
 }
+
+extern struct kmem_cache *kmalloc_dpdk_caches[KMALLOC_SHIFT_HIGH + 1];
 
 /*
  * Figure out which kmalloc slab an allocation of a certain size

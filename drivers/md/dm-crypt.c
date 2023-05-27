@@ -132,9 +132,7 @@ struct iv_elephant_private {
  * and encrypts / decrypts at the same time.
  */
 enum flags { DM_CRYPT_SUSPENDED, DM_CRYPT_KEY_VALID,
-	     DM_CRYPT_SAME_CPU, DM_CRYPT_NO_OFFLOAD,
-	     DM_CRYPT_NO_READ_WORKQUEUE, DM_CRYPT_NO_WRITE_WORKQUEUE,
-	     DM_CRYPT_WRITE_INLINE };
+	     DM_CRYPT_SAME_CPU, DM_CRYPT_NO_OFFLOAD, DM_CRYPT_FORCE_INLINE = (sizeof(unsigned long) * 8 - 1) };
 
 enum cipher_flags {
 	CRYPT_MODE_INTEGRITY_AEAD,	/* Use authenticated mode for cipher */
@@ -1474,6 +1472,7 @@ static int crypt_alloc_req_skcipher(struct crypt_config *cc,
 
 	skcipher_request_set_tfm(ctx->r.req, cc->cipher_tfm.tfms[key_index]);
 
+<<<<<<< HEAD
 	/*
 	 * Use REQ_MAY_BACKLOG so a cipher driver internally backlogs
 	 * requests if driver request queue is full.
@@ -1483,6 +1482,20 @@ static int crypt_alloc_req_skcipher(struct crypt_config *cc,
 	    kcryptd_async_done, dmreq_of_req(cc, ctx->r.req));
 
 	return 0;
+=======
+	if (test_bit(DM_CRYPT_FORCE_INLINE, &cc->flags))
+		/* make sure we zero important fields of the request */
+		skcipher_request_set_callback(ctx->r.req, 0, NULL, NULL);
+	else
+		/*
+		 * Use REQ_MAY_BACKLOG so a cipher driver internally backlogs
+		 * requests if driver request queue is full.
+		 */
+		skcipher_request_set_callback(
+			ctx->r.req,
+			CRYPTO_TFM_REQ_MAY_BACKLOG | CRYPTO_TFM_REQ_MAY_SLEEP,
+			kcryptd_async_done, dmreq_of_req(cc, ctx->r.req));
+>>>>>>> f0c02ddbafff11c0854221b1c043a59d42961e7b
 }
 
 static int crypt_alloc_req_aead(struct crypt_config *cc,
@@ -1618,7 +1631,11 @@ static blk_status_t crypt_convert(struct crypt_config *cc,
 			atomic_dec(&ctx->cc_pending);
 			ctx->cc_sector += sector_step;
 			tag_offset++;
+<<<<<<< HEAD
 			if (!atomic)
+=======
+			if (!test_bit(DM_CRYPT_FORCE_INLINE, &cc->flags))
+>>>>>>> f0c02ddbafff11c0854221b1c043a59d42961e7b
 				cond_resched();
 			continue;
 		/*
@@ -1959,9 +1976,19 @@ static void kcryptd_crypt_write_io_submit(struct dm_crypt_io *io, int async)
 
 	clone->bi_iter.bi_sector = cc->start + io->sector;
 
+<<<<<<< HEAD
 	if ((likely(!async) && test_bit(DM_CRYPT_NO_OFFLOAD, &cc->flags)) ||
 	    test_bit(DM_CRYPT_NO_WRITE_WORKQUEUE, &cc->flags)) {
 		dm_submit_bio_remap(io->base_bio, clone);
+=======
+	if (test_bit(DM_CRYPT_FORCE_INLINE, &cc->flags)) {
+		generic_make_request(clone);
+		return;
+	}
+
+	if (likely(!async) && test_bit(DM_CRYPT_NO_OFFLOAD, &cc->flags)) {
+		generic_make_request(clone);
+>>>>>>> f0c02ddbafff11c0854221b1c043a59d42961e7b
 		return;
 	}
 
@@ -2220,6 +2247,7 @@ static void kcryptd_queue_crypt(struct dm_crypt_io *io)
 {
 	struct crypt_config *cc = io->cc;
 
+<<<<<<< HEAD
 	if ((bio_data_dir(io->base_bio) == READ && test_bit(DM_CRYPT_NO_READ_WORKQUEUE, &cc->flags)) ||
 	    (bio_data_dir(io->base_bio) == WRITE && test_bit(DM_CRYPT_NO_WRITE_WORKQUEUE, &cc->flags))) {
 		/*
@@ -2239,6 +2267,19 @@ static void kcryptd_queue_crypt(struct dm_crypt_io *io)
 
 	INIT_WORK(&io->work, kcryptd_crypt);
 	queue_work(cc->crypt_queue, &io->work);
+=======
+	if (test_bit(DM_CRYPT_FORCE_INLINE, &cc->flags)) {
+		if (in_irq()) {
+			/* Crypto API will fail hard in hard IRQ context */
+			tasklet_init(&io->tasklet, kcryptd_crypt_tasklet, (unsigned long)&io->work);
+			tasklet_schedule(&io->tasklet);
+		} else
+			kcryptd_crypt(&io->work);
+	} else {
+		INIT_WORK(&io->work, kcryptd_crypt);
+		queue_work(cc->crypt_queue, &io->work);
+	}
+>>>>>>> f0c02ddbafff11c0854221b1c043a59d42961e7b
 }
 
 static void crypt_free_tfms_aead(struct crypt_config *cc)
@@ -3066,7 +3107,11 @@ static int crypt_ctr_optional(struct dm_target *ti, unsigned int argc, char **ar
 	struct crypt_config *cc = ti->private;
 	struct dm_arg_set as;
 	static const struct dm_arg _args[] = {
+<<<<<<< HEAD
 		{0, 8, "Invalid number of feature args"},
+=======
+		{0, 7, "Invalid number of feature args"},
+>>>>>>> f0c02ddbafff11c0854221b1c043a59d42961e7b
 	};
 	unsigned int opt_params, val;
 	const char *opt_string, *sval;
@@ -3096,10 +3141,15 @@ static int crypt_ctr_optional(struct dm_target *ti, unsigned int argc, char **ar
 
 		else if (!strcasecmp(opt_string, "submit_from_crypt_cpus"))
 			set_bit(DM_CRYPT_NO_OFFLOAD, &cc->flags);
+<<<<<<< HEAD
 		else if (!strcasecmp(opt_string, "no_read_workqueue"))
 			set_bit(DM_CRYPT_NO_READ_WORKQUEUE, &cc->flags);
 		else if (!strcasecmp(opt_string, "no_write_workqueue"))
 			set_bit(DM_CRYPT_NO_WRITE_WORKQUEUE, &cc->flags);
+=======
+		else if (!strcasecmp(opt_string, "force_inline"))
+			set_bit(DM_CRYPT_FORCE_INLINE, &cc->flags);
+>>>>>>> f0c02ddbafff11c0854221b1c043a59d42961e7b
 		else if (sscanf(opt_string, "integrity:%u:", &val) == 1) {
 			if (val == 0 || val > MAX_TAG_SIZE) {
 				ti->error = "Invalid integrity arguments";
@@ -3206,6 +3256,7 @@ static int crypt_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		if (ret)
 			goto bad;
 	}
+	set_bit(DM_CRYPT_FORCE_INLINE, &cc->flags);
 
 	ret = crypt_ctr_cipher(ti, argv[0], argv[1]);
 	if (ret < 0)
@@ -3469,8 +3520,12 @@ static void crypt_status(struct dm_target *ti, status_type_t type,
 		num_feature_args += !!ti->num_discard_bios;
 		num_feature_args += test_bit(DM_CRYPT_SAME_CPU, &cc->flags);
 		num_feature_args += test_bit(DM_CRYPT_NO_OFFLOAD, &cc->flags);
+<<<<<<< HEAD
 		num_feature_args += test_bit(DM_CRYPT_NO_READ_WORKQUEUE, &cc->flags);
 		num_feature_args += test_bit(DM_CRYPT_NO_WRITE_WORKQUEUE, &cc->flags);
+=======
+		num_feature_args += test_bit(DM_CRYPT_FORCE_INLINE, &cc->flags);
+>>>>>>> f0c02ddbafff11c0854221b1c043a59d42961e7b
 		num_feature_args += cc->sector_size != (1 << SECTOR_SHIFT);
 		num_feature_args += test_bit(CRYPT_IV_LARGE_SECTORS, &cc->cipher_flags);
 		if (cc->on_disk_tag_size)
@@ -3483,10 +3538,15 @@ static void crypt_status(struct dm_target *ti, status_type_t type,
 				DMEMIT(" same_cpu_crypt");
 			if (test_bit(DM_CRYPT_NO_OFFLOAD, &cc->flags))
 				DMEMIT(" submit_from_crypt_cpus");
+<<<<<<< HEAD
 			if (test_bit(DM_CRYPT_NO_READ_WORKQUEUE, &cc->flags))
 				DMEMIT(" no_read_workqueue");
 			if (test_bit(DM_CRYPT_NO_WRITE_WORKQUEUE, &cc->flags))
 				DMEMIT(" no_write_workqueue");
+=======
+			if (test_bit(DM_CRYPT_FORCE_INLINE, &cc->flags))
+				DMEMIT(" force_inline");
+>>>>>>> f0c02ddbafff11c0854221b1c043a59d42961e7b
 			if (cc->on_disk_tag_size)
 				DMEMIT(" integrity:%u:%s", cc->on_disk_tag_size, cc->cipher_auth);
 			if (cc->sector_size != (1 << SECTOR_SHIFT))

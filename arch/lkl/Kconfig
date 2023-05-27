@@ -1,9 +1,8 @@
 config LKL
        def_bool y
-       depends on !SMP && !MMU && !COREDUMP && !SECCOMP && !UPROBES && !COMPAT && !USER_RETURN_NOTIFIER
+       depends on !MMU && !COREDUMP && !SECCOMP && !UPROBES && !COMPAT && !USER_RETURN_NOTIFIER
        select ARCH_THREAD_STACK_ALLOCATOR
        select RWSEM_GENERIC_SPINLOCK
-       select GENERIC_ATOMIC64
        select GENERIC_HWEIGHT
        select FLATMEM
        select FLAT_NODE_MEM_MAP
@@ -13,7 +12,13 @@ config LKL
        select NO_PREEMPT
        select ARCH_WANT_FRAME_POINTERS
        select HAS_DMA
-       select DMA_OPS
+       select DMA_DIRECT_OPS
+       select PHYS_ADDR_T_64BIT if 64BIT
+       select 64BIT if OUTPUT_FORMAT = "elf64-x86-64"
+       select 64BIT if OUTPUT_FORMAT = "pe-x86-64"
+       select HAVE_UNDERSCORE_SYMBOL_PREFIX if OUTPUT_FORMAT = "pe-i386"
+       select 64BIT if OUTPUT_FORMAT = "elf64-x86-64-freebsd"
+       select 64BIT if OUTPUT_FORMAT = "elf64-littleaarch64"
        select NET
        select MULTIUSER
        select INET
@@ -34,33 +39,16 @@ config LKL
        select IP_ADVANCED_ROUTER
        select IPV6_ADVANCED_ROUTER
        select ARCH_NO_COHERENT_DMA_MMAP
-       select HAVE_MEMBLOCK
-       select NO_BOOTMEM
-       select BLK_DEV_NVME
-       select UACCESS_MEMCPY
-       select GENERIC_STRNCPY_FROM_USER
-       select GENERIC_STRNLEN_USER
-       select HAVE_ARCH_KASAN
+       select ARCH_USE_QUEUED_RWLOCKS
+       select ARCH_USE_QUEUED_SPINLOCKS
+       select GENERIC_BUG if BUG
+       select GENERIC_CLOCKEVENTS_BROADCAST
+       select CONFIG_MODULES_USE_ELF_RELA
+       select CRYPTO_SIMD
 
-config LKL_FUZZING
-       bool "LLVM fuzzing instrumentation"
-       default n
-       help
-         This configuration option enables fuzzing instrumentation
-         for the Linux kernel source files to enable coverage-guided
-         fuzzing. At the moment LKL supports libFuzzer fuzzing
-         engine only.
-
-config LKL_LINE_COV
-       bool "Code coverage instrumentation for fuzzers"
-       depends on LKL_FUZZING && CC_IS_CLANG
-       default n
-       help
-         This configuration option enables line code coverage
-         instrumentation for the Linux kernel to generate fuzzing
-         code coverage reports. When this option is enabled the
-         kernel source files are built with LLVM SanitizerCoverage
-         instrumentation.
+config OUTPUTFORMAT
+       string
+       option env="OUTPUT_FORMAT"
 
 config OUTPUT_FORMAT
        string "Output format"
@@ -98,26 +86,49 @@ config RWSEM_GENERIC_SPINLOCK
 	bool
 	default y
 
-config HZ
-        int
-        default 100
+config SMP
+       def_bool y
+       select GENERIC_SMP_IDLE_THREAD
 
-config CONSOLE_LOGLEVEL_QUIET
-	int "quiet console loglevel (1-15)"
-	range 1 15
-	default "4"
-	help
-	  loglevel to use when "quiet" is passed on the kernel commandline.
+config KALLSYMS_ALL
+       # incompatible so far, we need more linker script magics in future
+       def_bool n
 
-	  When "quiet" is passed on the kernel commandline this loglevel
-	  will be used as the loglevel. IOW passing "quiet" will be the
-	  equivalent of passing "loglevel=<CONSOLE_LOGLEVEL_QUIET>"
+config NR_CPUS
+	int "Maximum number of CPUs" if SMP
+	default "2" if SMP
 
-config PCI
-	bool "PCI support"
-	select NO_GENERIC_PCI_IOPORT_MAP
-	select GENERIC_PCI_IOMAP
+config LKL_X86_64
+	bool
+	default y if 64BIT
+
+config LKL_ARM_64
+	bool
+	default n if 64BIT
+
+config BUG
+	bool
 	default y
+
+source init/Kconfig
+
+source net/Kconfig
+
+source drivers/Kconfig
+
+source fs/Kconfig
+
+source mm/Kconfig
+
+source kernel/Kconfig.preempt
+
+source kernel/Kconfig.locks
+
+source kernel/Kconfig.hz
+
+source security/Kconfig
+
+source crypto/Kconfig
 
 config RAID6_PQ_BENCHMARK
 	bool

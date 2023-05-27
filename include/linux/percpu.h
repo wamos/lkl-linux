@@ -56,7 +56,7 @@
  * intelligent way to determine this would be nice.
  */
 #if BITS_PER_LONG > 32
-#define PERCPU_DYNAMIC_RESERVE		(28 << 10)
+#define PERCPU_DYNAMIC_RESERVE		(24 << 11)
 #else
 #define PERCPU_DYNAMIC_RESERVE		(20 << 10)
 #endif

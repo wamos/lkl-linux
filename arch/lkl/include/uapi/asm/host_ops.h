@@ -146,6 +146,7 @@ struct lkl_host_operations {
 
 	struct lkl_mutex *(*mutex_alloc)(int recursive);
 	void (*mutex_free)(struct lkl_mutex *mutex);
+	int (*mutex_trylock)(struct lkl_mutex *mutex);
 	void (*mutex_lock)(struct lkl_mutex *mutex);
 	void (*mutex_unlock)(struct lkl_mutex *mutex);
 
@@ -167,10 +168,19 @@ struct lkl_host_operations {
 	void* (*page_alloc)(unsigned long size);
 	void (*page_free)(void *addr, unsigned long size);
 
+	void *(*spdk_malloc)(unsigned long);
+	void *(*spdk_free)(void *);
+
+	void *(*dpdk_malloc)(unsigned long);
+	void *(*dpdk_free)(void *);
+
+	void* (*mem_executable_alloc)(unsigned long);
+	void (*mem_executable_free)(void *, unsigned long size);
+
 	unsigned long long (*time)(void);
 
 	void* (*timer_alloc)(void (*fn)(void *), void *arg);
-	int (*timer_set_oneshot)(void *timer, unsigned long delta);
+	int (*timer_start)(void *timer);
 	void (*timer_free)(void *timer);
 
 	void* (*ioremap)(long addr, int size);
@@ -182,17 +192,21 @@ struct lkl_host_operations {
 	void (*jmp_buf_set)(struct lkl_jmp_buf *jmpb, void (*f)(void));
 	void (*jmp_buf_longjmp)(struct lkl_jmp_buf *jmpb, int val);
 
-	void* (*memcpy)(void *dest, const void *src, unsigned long count);
-	void* (*memset)(void *s, int c, unsigned long count);
-
-	void* (*mmap)(void *addr, unsigned long size, enum lkl_prot prot);
-	int (*munmap)(void *addr, unsigned long size);
-
-	struct lkl_dev_pci_ops *pci_ops;
+	long (*sysconf)(int name);
 };
 
 /**
- * lkl_init - initializes LKL
+ * Sets up x86 CPU info needed for checks when enabling hardware acceleration
+ * of e.g. crypto primitives.
+ */
+int lkl_setup_x86_cpu(char *vendor_id,
+		       unsigned int model,
+		       unsigned int family,
+		       char *capabilities,
+		       unsigned long long xfeature_mask);
+
+/**
+ * lkl_start_kernel - registers the host operations and starts the kernel
  *
  * This function needs to be called this before any other LKL function.
  *
@@ -223,5 +237,7 @@ int lkl_is_running(void);
 
 int lkl_printf(const char *, ...);
 void lkl_bug(const char *, ...);
+
+long lkl_get_context_switches(void);
 
 #endif

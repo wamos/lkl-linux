@@ -9,12 +9,14 @@
 #include <linux/task_work.h>
 #include <linux/syscalls.h>
 #include <linux/kthread.h>
+#include <linux/irqflags.h>
 #include <linux/platform_device.h>
 #include <asm/host_ops.h>
 #include <asm/syscalls.h>
 #include <asm/syscalls_32.h>
 #include <asm/cpu.h>
 #include <asm/sched.h>
+#include <asm/signal.h>
 
 static asmlinkage long sys_virtio_mmio_device_add(long base, long size,
 						  unsigned int irq);
@@ -44,6 +46,7 @@ static long run_syscall(long no, long *params)
 				params[4], params[5]);
 
 	task_work_run();
+//	do_signal(NULL);
 
 	return ret;
 }
@@ -55,13 +58,28 @@ static long run_syscall(long no, long *params)
 static int host_task_id;
 static struct task_struct *host0;
 
+extern int lkl_max_cpu_no;
+
 static int new_host_task(struct task_struct **task)
 {
 	pid_t pid;
 
+	lkl_set_current_cpu(task_cpu(host0));
+	int ret = lkl_cpu_get();
+	if (ret < 0)
+		return ret;
+
 	switch_to_host_task(host0);
 
+	int new_cpu = (host_task_id + 1) % lkl_max_cpu_no;
+	if (new_cpu != task_cpu(host0)) {
+		ret = __lkl_cpu_get(new_cpu);
+		if (ret < 0)
+			return ret;
+	}
+
 	pid = kernel_thread(host_task_stub, NULL, CLONE_FLAGS);
+
 	if (pid < 0)
 		return pid;
 
@@ -70,6 +88,10 @@ static int new_host_task(struct task_struct **task)
 	rcu_read_unlock();
 
 	host_task_id++;
+	set_cpus_allowed_ptr(*task, get_cpu_mask(new_cpu));
+//	set_cpus_allowed_ptr(*task, cpu_all_mask);
+
+	task_thread_info(*task)->tid = lkl_ops->thread_self();
 
 	snprintf((*task)->comm, sizeof((*task)->comm), "host%d", host_task_id);
 
@@ -85,6 +107,7 @@ static void del_host_task(void *arg)
 	struct task_struct *task = (struct task_struct *)arg;
 	struct thread_info *ti = task_thread_info(task);
 
+	lkl_set_current_cpu(task_cpu(task));
 	if (lkl_cpu_get() < 0)
 		return;
 
@@ -100,11 +123,9 @@ long lkl_syscall(long no, long *params)
 {
 	struct task_struct *task = host0;
 	long ret;
+void *thread = lkl_ops->thread_self();
 
-	ret = lkl_cpu_get();
-	if (ret < 0)
-		return ret;
-
+	int new_task = 0;
 	if (lkl_ops->tls_get) {
 		task = lkl_ops->tls_get(task_key);
 		if (!task) {
@@ -112,10 +133,25 @@ long lkl_syscall(long no, long *params)
 			if (ret)
 				goto out;
 			lkl_ops->tls_set(task_key, task);
+			new_task = 1;
 		}
 	}
 
+	lkl_set_current_cpu(task_cpu(task));
+	if (!new_task) {
+		ret = lkl_cpu_get();
+		if (ret < 0)
+			return ret;
+	}
+
 	switch_to_host_task(task);
+
+	if (new_task && task_cpu(task) != task_cpu(host0)) {
+		// Temporarily clear TIF_HOST_THREAD flag to avoid rescheduling
+		clear_ti_thread_flag(current_thread_info(), TIF_HOST_THREAD);
+		__lkl_cpu_put(task_cpu(host0));
+		set_ti_thread_flag(current_thread_info(), TIF_HOST_THREAD);
+	}
 
 	ret = run_syscall(no, params);
 
@@ -130,37 +166,105 @@ out:
 	return ret;
 }
 
-static struct task_struct *idle_host_task;
+struct task_struct *idle_host_tasks[NR_CPUS];
 
 /* called from idle, don't failed, don't block */
 void wakeup_idle_host_task(void)
 {
-	if (!need_resched() && idle_host_task)
-		wake_up_process(idle_host_task);
+	int cpu = smp_processor_id();
+
+	if (!need_resched() && idle_host_tasks[cpu]) {
+		wake_up_process(idle_host_tasks[cpu]);
+	}
 }
 
-static int idle_host_task_loop(void *unused)
+static int secondary_idle_host_task_loop(void *voidp)
 {
+	struct secondary_idle_entry *arg = voidp;
+	int cpu = arg->cpu;
+	int local_cpu;
 	struct thread_info *ti = task_thread_info(current);
 
-	snprintf(current->comm, sizeof(current->comm), "idle_host_task");
-	set_thread_flag(TIF_HOST_THREAD);
-	idle_host_task = current;
+	while (1) {
+		local_cpu = raw_smp_processor_id();
+		if (local_cpu == cpu) {
+			break;
+		}
+		set_current_state(TASK_UNINTERRUPTIBLE);
+		kthread_bind(current, cpu);
+		schedule_timeout(10);	/* TODO: any better fix ? */
+		if (idle_host_tasks[cpu] == NULL)
+			return 0;
+	}
 
+	snprintf(current->comm, TASK_COMM_LEN, "idle_host_task%d", arg->cpu);
+	set_ti_thread_flag(task_thread_info(current), TIF_HOST_THREAD);
+//	rcu_idle_enter();
 	for (;;) {
-		lkl_cpu_put();
+		if (lkl_cpu_owner(cpu) == lkl_ops->thread_self())
+			lkl_cpu_put();
+
 		lkl_ops->sem_down(ti->sched_sem);
-		if (idle_host_task == NULL) {
+
+		if (idle_host_tasks[cpu] == NULL) {
 			lkl_ops->thread_exit();
 			return 0;
 		}
-		schedule_tail(ti->prev_sched);
+
+		if (irqs_disabled())	/*  IPI may wakeup this under enabled IRQ */
+			schedule_tail(ti->prev_sched);
+	}
+}
+
+int smp_idle_host_init(struct secondary_idle_entry *arg)
+{
+	struct task_struct *tsk;
+	pid_t pid;
+
+	/* We are at the Middle Age, the kthread_create*API is not safe for us */
+	pid = kernel_thread(secondary_idle_host_task_loop,
+					(void*)arg, CLONE_FLAGS);
+	if (pid < 0)
+		return pid;
+
+	rcu_read_lock();
+	tsk = find_task_by_pid_ns(pid, &init_pid_ns);
+	rcu_read_unlock();
+	idle_host_tasks[arg->cpu] = tsk;
+
+	return 0;
+}
+
+int idle_host_task_loop(void *unused)
+{
+	struct thread_info *ti = task_thread_info(current);
+
+	snprintf(current->comm, sizeof(current->comm), "idle_host_task0");
+	set_thread_flag(TIF_HOST_THREAD);
+	lkl_cpu_clock_init(0);
+
+	for (;;) {
+//		rcu_idle_enter();
+		lkl_cpu_put();
+		lkl_ops->sem_down(ti->sched_sem);
+
+		if (idle_host_tasks[0] == NULL) {
+			lkl_ops->thread_exit();
+			return 0;
+		}
+
+		if (irqs_disabled())	/*  IPI may wakeup this under enabled IRQ */
+			schedule_tail(ti->prev_sched);
+//		rcu_idle_exit();
 	}
 }
 
 int syscalls_init(void)
 {
-	snprintf(current->comm, sizeof(current->comm), "host0");
+	pid_t pid;
+	struct task_struct *task;
+
+	snprintf(current->comm, sizeof(current->comm), "syscalls_init()");
 	set_thread_flag(TIF_HOST_THREAD);
 	host0 = current;
 
@@ -170,23 +274,37 @@ int syscalls_init(void)
 			return -1;
 	}
 
-	if (kernel_thread(idle_host_task_loop, NULL, CLONE_FLAGS) < 0) {
+	set_cpus_allowed_ptr(current, cpumask_of(0));
+	schedule();
+
+	pid = kernel_thread(idle_host_task_loop, NULL, CLONE_FLAGS);
+	if (pid < 0) {
 		if (lkl_ops->tls_free)
 			lkl_ops->tls_free(task_key);
 		return -1;
 	}
+	rcu_read_lock();
+	task = find_task_by_pid_ns(pid, &init_pid_ns);
+	rcu_read_unlock();
+	idle_host_tasks[0] = task;
+
+	snprintf(current->comm, sizeof(current->comm), "host0");
 
 	return 0;
 }
 
 void syscalls_cleanup(void)
 {
-	if (idle_host_task) {
-		struct thread_info *ti = task_thread_info(idle_host_task);
+	int cpu;
 
-		idle_host_task = NULL;
-		lkl_ops->sem_up(ti->sched_sem);
-		lkl_ops->thread_join(ti->tid);
+	for (cpu=0; cpu<NR_CPUS; cpu++) {
+		if (idle_host_tasks[cpu]) {
+			struct thread_info *ti = task_thread_info(idle_host_tasks[cpu]);
+
+			idle_host_tasks[cpu] = NULL;
+			lkl_ops->sem_up(ti->sched_sem);
+			lkl_ops->thread_join(ti->tid);
+		}
 	}
 
 	if (lkl_ops->tls_free)

@@ -15,6 +15,7 @@
 #include <linux/bitops.h>
 #include <linux/hardirq.h> /* for in_interrupt() */
 #include <linux/hugetlb_inline.h>
+#include <linux/dma-alloc.h>
 
 struct folio_batch;
 
@@ -473,7 +474,7 @@ struct folio *filemap_alloc_folio(gfp_t gfp, unsigned int order);
 #else
 static inline struct folio *filemap_alloc_folio(gfp_t gfp, unsigned int order)
 {
-	return folio_alloc(gfp, order);
+	return alloc_pages(gfp | spdk_gfp_flags, 0);
 }
 #endif
 

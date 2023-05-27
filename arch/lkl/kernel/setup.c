@@ -12,18 +12,40 @@
 #include <asm/unistd.h>
 #include <asm/syscalls.h>
 #include <asm/cpu.h>
+#include <asm/x86/cpufeature.h>
 
 struct lkl_host_operations *lkl_ops;
 static char cmd_line[COMMAND_LINE_SIZE];
-static void *init_sem;
+static struct lkl_sem *init_sem;
 static int is_running;
 void (*pm_power_off)(void) = NULL;
-static unsigned long mem_size = 64 * 1024 * 1024;
+static unsigned long mem_size = 32  * 1024 * 1024;
 
 long lkl_panic_blink(int state)
 {
 	lkl_ops->panic();
 	return 0;
+}
+
+#define X86_VENDOR_ID_INTEL "GenuineIntel"
+#define X86_VENDOR_INTEL 0
+#define X86_VENDOR_UNKNOWN 0xff
+
+int __init lkl_setup_x86_cpu(char *vendor_id,
+			     unsigned int model,
+			     unsigned int family,
+			     char *capabilities,
+			     unsigned long long xfeature_mask) {
+	// For now, we only care about Intel
+	if (memcmp(X86_VENDOR_ID_INTEL, vendor_id, sizeof(X86_VENDOR_ID_INTEL)))
+		boot_cpu_data.x86_vendor = X86_VENDOR_INTEL;
+	else
+		boot_cpu_data.x86_vendor = X86_VENDOR_UNKNOWN;
+	boot_cpu_data.x86_model = model;
+	boot_cpu_data.x86 = family;
+	memcpy(boot_cpu_data.x86_capability, capabilities, sizeof(boot_cpu_data.x86_capability));
+
+	boot_cpu_xfeature_mask = xfeature_mask;
 }
 
 static int __init setup_mem_size(char *str)
@@ -38,6 +60,8 @@ void __init setup_arch(char **cl)
 	*cl = cmd_line;
 	panic_blink = lkl_panic_blink;
 	parse_early_param();
+	if (lkl_smp_init())
+		panic("lkl_smp_init() failed");
 	bootmem_init(mem_size);
 }
 
@@ -105,7 +129,7 @@ int __init lkl_start_kernel(const char *fmt, ...)
 	lkl_ops->sem_down(init_sem);
 	lkl_ops->sem_free(init_sem);
 	current_thread_info()->tid = lkl_ops->thread_self();
-	lkl_cpu_change_owner(current_thread_info()->tid);
+	lkl_cpu_change_owner(raw_smp_processor_id(), current_thread_info()->tid);
 
 	lkl_cpu_put();
 	is_running = 1;
@@ -143,6 +167,12 @@ long lkl_sys_halt(void)
 	long err;
 	long params[6] = {LINUX_REBOOT_MAGIC1,
 		LINUX_REBOOT_MAGIC2, LINUX_REBOOT_CMD_RESTART, };
+
+	void dpdk_exit(void);
+	dpdk_exit();
+
+	void spdk_exit(void);
+	spdk_exit();
 
 	err = lkl_syscall(__NR_reboot, params);
 	if (err < 0)

@@ -76,6 +76,8 @@ static int call_modprobe(char *module_name, int wait)
 		NULL
 	};
 
+	return -ENOMEM;
+
 	char **argv = kmalloc(sizeof(char *[5]), GFP_KERNEL);
 	if (!argv)
 		goto out;

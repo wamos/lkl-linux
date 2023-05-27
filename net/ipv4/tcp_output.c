@@ -1130,6 +1130,30 @@ void __init tcp_tasklet_init(void)
 	}
 }
 
+void tcp_tasklet_disable(void)
+{
+	int i;
+
+	for_each_possible_cpu(i) {
+		struct tsq_tasklet *tsq = &per_cpu(tsq_tasklet, i);
+
+    tasklet_disable_nosync(&tsq->tasklet);
+	}
+}
+EXPORT_SYMBOL(tcp_tasklet_disable);
+
+void tcp_tasklet_enable(void)
+{
+	int i;
+
+	for_each_possible_cpu(i) {
+		struct tsq_tasklet *tsq = &per_cpu(tsq_tasklet, i);
+
+    tasklet_enable(&tsq->tasklet);
+	}
+}
+EXPORT_SYMBOL(tcp_tasklet_enable);
+
 /*
  * Write buffer destructor automatically called from kfree_skb.
  * We can't xmit new skbs from this context, as we might already
@@ -2494,6 +2518,9 @@ static bool tcp_pacing_check(struct sock *sk)
  * of queued bytes to ensure line rate.
  * One example is wifi aggregation (802.11 AMPDU)
  */
+
+void i40_clean_queue(int port_id, int queue_id);
+
 static bool tcp_small_queue_check(struct sock *sk, const struct sk_buff *skb,
 				  unsigned int factor)
 {
@@ -2525,6 +2552,11 @@ static bool tcp_small_queue_check(struct sock *sk, const struct sk_buff *skb,
 		 * after softirq/tasklet schedule.
 		 * This helps when TX completions are delayed too much.
 		 */
+		i40_clean_queue(0, 0);
+		if (refcount_read(&sk->sk_wmem_alloc) > limit) {
+			return false;
+		}
+
 		if (tcp_rtx_queue_empty(sk))
 			return false;
 

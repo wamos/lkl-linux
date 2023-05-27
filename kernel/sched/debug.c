@@ -534,8 +534,11 @@ print_task(struct seq_file *m, struct rq *rq, struct task_struct *p)
 	else
 		SEQ_printf(m, " %c", task_state_to_char(p));
 
-	SEQ_printf(m, " %15s %5d %9Ld.%06ld %9Ld %5d ",
-		p->comm, task_pid_nr(p),
+	struct thread_info *ti = task_thread_info(p);
+
+	SEQ_printf(m, "%15s %5llx %9Ld.%06ld %9Ld %5d ",
+		//p->comm, task_pid_nr(p),
+		p->comm, ti->tid,
 		SPLIT_NS(p->se.vruntime),
 		(long long)(p->nvcsw + p->nivcsw),
 		p->prio);
@@ -553,6 +556,8 @@ print_task(struct seq_file *m, struct rq *rq, struct task_struct *p)
 	SEQ_printf_task_group_path(m, task_group(p), " %s")
 #endif
 
+	SEQ_printf(m, " %ld", p->state);
+
 	SEQ_printf(m, "\n");
 }
 
@@ -562,7 +567,7 @@ static void print_rq(struct seq_file *m, struct rq *rq, int rq_cpu)
 
 	SEQ_printf(m, "\n");
 	SEQ_printf(m, "runnable tasks:\n");
-	SEQ_printf(m, " S            task   PID         tree-key  switches  prio"
+	SEQ_printf(m, " S           task   TID         tree-key  switches  prio"
 		   "     wait-time             sum-exec        sum-sleep\n");
 	SEQ_printf(m, "-------------------------------------------------------"
 		   "------------------------------------------------------\n");
@@ -595,7 +600,7 @@ void print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq)
 	SEQ_printf(m, "  .%-30s: %Ld.%06ld\n", "exec_clock",
 			SPLIT_NS(cfs_rq->exec_clock));
 
-	raw_spin_rq_lock_irqsave(rq, flags);
+	//raw_spin_lock_irqsave(&rq->lock, flags);
 	if (rb_first_cached(&cfs_rq->tasks_timeline))
 		MIN_vruntime = (__pick_first_entity(cfs_rq))->vruntime;
 	last = __pick_last_entity(cfs_rq);
@@ -603,7 +608,8 @@ void print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq)
 		max_vruntime = last->vruntime;
 	min_vruntime = cfs_rq->min_vruntime;
 	rq0_min_vruntime = cpu_rq(0)->cfs.min_vruntime;
-	raw_spin_rq_unlock_irqrestore(rq, flags);
+
+	//raw_spin_unlock_irqrestore(&rq->lock, flags);
 	SEQ_printf(m, "  .%-30s: %Ld.%06ld\n", "MIN_vruntime",
 			SPLIT_NS(MIN_vruntime));
 	SEQ_printf(m, "  .%-30s: %Ld.%06ld\n", "min_vruntime",

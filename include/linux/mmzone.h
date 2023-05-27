@@ -138,7 +138,7 @@ struct zone_padding {
 #define ZONE_PADDING(name)
 #endif
 
-#ifdef CONFIG_NUMA
+//#ifdef CONFIG_NUMA
 enum numa_stat_item {
 	NUMA_HIT,		/* allocated in intended node */
 	NUMA_MISS,		/* allocated in non intended node */
@@ -148,9 +148,9 @@ enum numa_stat_item {
 	NUMA_OTHER,		/* allocation from other node */
 	NR_VM_NUMA_EVENT_ITEMS
 };
-#else
-#define NR_VM_NUMA_EVENT_ITEMS 0
-#endif
+//#else
+//#define NR_VM_NUMA_STAT_ITEMS 0
+//#endif
 
 enum zone_stat_item {
 	/* First 128 byte cacheline (assuming 64 bit words) */
@@ -394,7 +394,12 @@ struct per_cpu_pages {
 	struct list_head lists[NR_PCP_LISTS];
 };
 
-struct per_cpu_zonestat {
+struct per_cpu_pageset {
+	struct per_cpu_pages pcp;
+//#ifdef CONFIG_NUMA
+	s8 expire;
+	u16 vm_numa_stat_diff[NR_VM_NUMA_STAT_ITEMS];
+//#endif
 #ifdef CONFIG_SMP
 	s8 vm_stat_diff[NR_VM_ZONE_STAT_ITEMS];
 	s8 stat_threshold;
@@ -531,9 +536,7 @@ struct zone {
 	 */
 	long lowmem_reserve[MAX_NR_ZONES];
 
-#ifdef CONFIG_NUMA
 	int node;
-#endif
 	struct pglist_data	*zone_pgdat;
 	struct per_cpu_pages	__percpu *per_cpu_pageset;
 	struct per_cpu_zonestat	__percpu *per_cpu_zonestats;
@@ -1105,11 +1108,15 @@ extern char numa_zonelist_order[];
 
 #ifndef CONFIG_NUMA
 
-extern struct pglist_data contig_page_data;
-static inline struct pglist_data *NODE_DATA(int nid)
-{
-	return &contig_page_data;
-}
+extern struct pglist_data dma_zones_page_data[];
+
+typedef enum {
+	DMA_ZONE_SGX = 0,
+	DMA_ZONE_DPDK = 1,
+	DMA_ZONE_SPDK = 2
+} dma_zone_t;
+#define NODE_DATA(nid) (&dma_zones_page_data[nid])
+#define NODE_MEM_MAP(nid) NODE_DATA(nid)->node_mem_map
 
 #else /* CONFIG_NUMA */
 
@@ -1161,7 +1168,7 @@ static inline int zonelist_zone_idx(struct zoneref *zoneref)
 
 static inline int zonelist_node_idx(struct zoneref *zoneref)
 {
-	return zone_to_nid(zoneref->zone);
+  return zoneref->zone->node;
 }
 
 struct zoneref *__next_zones_zonelist(struct zoneref *z,
@@ -1280,7 +1287,21 @@ static inline bool movable_only_nodes(nodemask_t *nodes)
 #endif
 
 #ifdef CONFIG_FLATMEM
-#define pfn_to_nid(pfn)		(0)
+extern unsigned long sgxlkl_heap_start, sgxlkl_heap_end, dpdk_dma_memory_start,
+	dpdk_dma_memory_end;
+#define pfn_to_nid(pfn)                                                        \
+	({                                                                     \
+		unsigned long __nid;                                           \
+		if ((pfn) >= (sgxlkl_heap_start >> 12) &&                      \
+		    (pfn) < (sgxlkl_heap_end >> 12))                           \
+			__nid = DMA_ZONE_SGX;                                  \
+		else if ((pfn) >= (dpdk_dma_memory_start >> 12) &&             \
+			 (pfn) < (dpdk_dma_memory_end >> 12))                  \
+			__nid = DMA_ZONE_DPDK;                                 \
+		else                                                           \
+			__nid = DMA_ZONE_SPDK;                                 \
+		__nid;                                                         \
+	})
 #endif
 
 #ifdef CONFIG_SPARSEMEM

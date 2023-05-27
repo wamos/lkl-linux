@@ -141,9 +141,9 @@ extern atomic_long_t vm_zone_stat[NR_VM_ZONE_STAT_ITEMS];
 extern atomic_long_t vm_node_stat[NR_VM_NODE_STAT_ITEMS];
 extern atomic_long_t vm_numa_event[NR_VM_NUMA_EVENT_ITEMS];
 
-#ifdef CONFIG_NUMA
-static inline void zone_numa_event_add(long x, struct zone *zone,
-				enum numa_stat_item item)
+//#ifdef CONFIG_NUMA
+static inline void zone_numa_state_add(long x, struct zone *zone,
+				 enum numa_stat_item item)
 {
 	atomic_long_add(x, &zone->vm_numa_event[item]);
 	atomic_long_add(x, &vm_numa_event[item]);
@@ -160,7 +160,7 @@ global_numa_event_state(enum numa_stat_item item)
 {
 	return atomic_long_read(&vm_numa_event[item]);
 }
-#endif /* CONFIG_NUMA */
+//#endif /* CONFIG_NUMA */
 
 static inline void zone_page_state_add(long x, struct zone *zone,
 				 enum zone_stat_item item)
@@ -237,6 +237,7 @@ static inline unsigned long zone_page_state_snapshot(struct zone *zone,
 	return x;
 }
 
+<<<<<<< HEAD
 #ifdef CONFIG_NUMA
 /* See __count_vm_event comment on why raw_cpu_inc is used. */
 static inline void
@@ -255,11 +256,16 @@ __count_numa_events(struct zone *zone, enum numa_stat_item item, long delta)
 	raw_cpu_add(pzstats->vm_numa_event[item], delta);
 }
 
+=======
+//#ifdef CONFIG_NUMA
+extern void __inc_numa_state(struct zone *zone, enum numa_stat_item item);
+>>>>>>> f0c02ddbafff11c0854221b1c043a59d42961e7b
 extern unsigned long sum_zone_node_page_state(int node,
 					      enum zone_stat_item item);
 extern unsigned long sum_zone_numa_event_state(int node, enum numa_stat_item item);
 extern unsigned long node_page_state(struct pglist_data *pgdat,
 						enum node_stat_item item);
+<<<<<<< HEAD
 extern unsigned long node_page_state_pages(struct pglist_data *pgdat,
 					   enum node_stat_item item);
 extern void fold_vm_numa_events(void);
@@ -271,6 +277,12 @@ static inline void fold_vm_numa_events(void)
 {
 }
 #endif /* CONFIG_NUMA */
+=======
+//#else
+//#define sum_zone_node_page_state(node, item) global_zone_page_state(item)
+//#define node_page_state(node, item) global_node_page_state(item)
+//#endif /* CONFIG_NUMA */
+>>>>>>> f0c02ddbafff11c0854221b1c043a59d42961e7b
 
 #ifdef CONFIG_SMP
 void __mod_zone_page_state(struct zone *, enum zone_stat_item item, long);

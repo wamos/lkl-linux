@@ -986,7 +986,22 @@ void drain_zonestat(struct zone *zone, struct per_cpu_zonestat *pzstats)
 }
 #endif
 
-#ifdef CONFIG_NUMA
+//#ifdef CONFIG_NUMA
+void __inc_numa_state(struct zone *zone,
+				 enum numa_stat_item item)
+{
+	struct per_cpu_pageset __percpu *pcp = zone->pageset;
+	u16 __percpu *p = pcp->vm_numa_stat_diff + item;
+	u16 v;
+
+	v = __this_cpu_inc_return(*p);
+
+	if (unlikely(v > NUMA_STATS_THRESHOLD)) {
+		zone_numa_state_add(v, zone, item);
+		__this_cpu_write(*p, 0);
+	}
+}
+
 /*
  * Determine the per node value of a stat item. This function
  * is called frequently in a NUMA machine, so try to be as
@@ -1032,15 +1047,7 @@ unsigned long node_page_state_pages(struct pglist_data *pgdat,
 #endif
 	return x;
 }
-
-unsigned long node_page_state(struct pglist_data *pgdat,
-			      enum node_stat_item item)
-{
-	VM_WARN_ON_ONCE(vmstat_item_in_bytes(item));
-
-	return node_page_state_pages(pgdat, item);
-}
-#endif
+//#endif
 
 #ifdef CONFIG_COMPACTION
 

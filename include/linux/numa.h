@@ -6,7 +6,10 @@
 #ifdef CONFIG_NODES_SHIFT
 #define NODES_SHIFT     CONFIG_NODES_SHIFT
 #else
-#define NODES_SHIFT     0
+/*
+ * We need to encode three states: SGX/DPDK/SPDK
+ */
+#define NODES_SHIFT     2
 #endif
 
 #define MAX_NUMNODES    (1 << NODES_SHIFT)
