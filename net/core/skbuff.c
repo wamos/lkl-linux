@@ -32,6 +32,7 @@
  *	The functions in this file will not compile correctly with gcc 2.4.x
  */
 
+#include "linux/gfp.h"
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/module.h>
@@ -423,8 +424,8 @@ struct sk_buff *__alloc_skb(unsigned int size, gfp_t gfp_mask,
 	 */
 	size = SKB_DATA_ALIGN(size);
 	size += SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
-	data = kmalloc_reserve(size, gfp_mask, node, &pfmemalloc);
-	if (unlikely(!data))
+	data = kmalloc_reserve(size, gfp_mask | GFP_DPDK_DMA, NUMA_NO_NODE, &pfmemalloc);
+	if (!data)
 		goto nodata;
 	/* kmalloc(size) might give us more room than requested.
 	 * Put skb_shared_info exactly at the end of allocated zone,
@@ -503,17 +504,13 @@ struct sk_buff *__netdev_alloc_skb(struct net_device *dev, unsigned int len,
 	if (sk_memalloc_socks())
 		gfp_mask |= __GFP_MEMALLOC;
 
-	if (in_hardirq() || irqs_disabled()) {
-		nc = this_cpu_ptr(&netdev_alloc_cache);
-		data = page_frag_alloc(nc, len, gfp_mask);
-		pfmemalloc = nc->pfmemalloc;
-	} else {
-		local_bh_disable();
-		nc = this_cpu_ptr(&napi_alloc_cache.page);
-		data = page_frag_alloc(nc, len, gfp_mask);
-		pfmemalloc = nc->pfmemalloc;
-		local_bh_enable();
-	}
+	local_irq_save(flags);
+
+	nc = this_cpu_ptr(&netdev_alloc_cache);
+	data = page_frag_alloc(nc, len, gfp_mask | GFP_DPDK_DMA);
+	pfmemalloc = nc->pfmemalloc;
+
+	local_irq_restore(flags);
 
 	if (unlikely(!data))
 		return NULL;
@@ -579,7 +576,7 @@ struct sk_buff *__napi_alloc_skb(struct napi_struct *napi, unsigned int len,
 	if (sk_memalloc_socks())
 		gfp_mask |= __GFP_MEMALLOC;
 
-	data = page_frag_alloc(&nc->page, len, gfp_mask);
+	data = page_frag_alloc(&nc->page, len, gfp_mask | GFP_DPDK_DMA);
 	if (unlikely(!data))
 		return NULL;
 
@@ -1426,7 +1423,7 @@ int skb_copy_ubufs(struct sk_buff *skb, gfp_t gfp_mask)
 
 	new_frags = (__skb_pagelen(skb) + PAGE_SIZE - 1) >> PAGE_SHIFT;
 	for (i = 0; i < new_frags; i++) {
-		page = alloc_page(gfp_mask);
+		page = alloc_page(gfp_mask | GFP_DPDK_DMA);
 		if (!page) {
 			while (head) {
 				struct page *next = (struct page *)page_private(head);
@@ -1698,7 +1695,7 @@ int pskb_expand_head(struct sk_buff *skb, int nhead, int ntail,
 	if (skb_pfmemalloc(skb))
 		gfp_mask |= __GFP_MEMALLOC;
 	data = kmalloc_reserve(size + SKB_DATA_ALIGN(sizeof(struct skb_shared_info)),
-			       gfp_mask, NUMA_NO_NODE, NULL);
+			       gfp_mask | GFP_DPDK_DMA, NUMA_NO_NODE, NULL);
 	if (!data)
 		goto nodata;
 	size = SKB_WITH_OVERHEAD(ksize(data));
@@ -6007,8 +6004,10 @@ struct sk_buff *alloc_skb_with_frags(unsigned long header_len,
 			if (npages >= 1 << order) {
 				page = alloc_pages((gfp_mask & ~__GFP_DIRECT_RECLAIM) |
 						   __GFP_COMP |
-						   __GFP_NOWARN,
-						   order);
+						   __GFP_NOWARN |
+						   __GFP_NORETRY |
+						   GFP_DPDK_DMA,
+							 order);
 				if (page)
 					goto fill_page;
 				/* Do not retry other high order allocations */
@@ -6017,7 +6016,7 @@ struct sk_buff *alloc_skb_with_frags(unsigned long header_len,
 			}
 			order--;
 		}
-		page = alloc_page(gfp_mask);
+		page = alloc_page(gfp_mask | GFP_DPDK_DMA);
 		if (!page)
 			goto failure;
 fill_page:
@@ -6050,7 +6049,7 @@ static int pskb_carve_inside_header(struct sk_buff *skb, const u32 off,
 		gfp_mask |= __GFP_MEMALLOC;
 	data = kmalloc_reserve(size +
 			       SKB_DATA_ALIGN(sizeof(struct skb_shared_info)),
-			       gfp_mask, NUMA_NO_NODE, NULL);
+			       gfp_mask | GFP_DPDK_DMA, NUMA_NO_NODE, NULL);
 	if (!data)
 		return -ENOMEM;
 
@@ -6170,7 +6169,7 @@ static int pskb_carve_inside_nonlinear(struct sk_buff *skb, const u32 off,
 		gfp_mask |= __GFP_MEMALLOC;
 	data = kmalloc_reserve(size +
 			       SKB_DATA_ALIGN(sizeof(struct skb_shared_info)),
-			       gfp_mask, NUMA_NO_NODE, NULL);
+			       gfp_mask | GFP_DPDK_DMA, NUMA_NO_NODE, NULL);
 	if (!data)
 		return -ENOMEM;
 
@@ -6298,193 +6297,101 @@ void skb_condense(struct sk_buff *skb)
 	skb->truesize = SKB_TRUESIZE(skb_end_offset(skb));
 }
 
-#ifdef CONFIG_SKB_EXTENSIONS
-static void *skb_ext_get_ptr(struct skb_ext *ext, enum skb_ext_id id)
-{
-	return (void *)ext + (ext->offset[id] * SKB_EXT_ALIGN_VALUE);
-}
 
-/**
- * __skb_ext_alloc - allocate a new skb extensions storage
+/* Dump skb information and contents.
  *
- * @flags: See kmalloc().
+ * Must only be called from net_ratelimit()-ed paths.
  *
- * Returns the newly allocated pointer. The pointer can later attached to a
- * skb via __skb_ext_set().
- * Note: caller must handle the skb_ext as an opaque data.
+ * Dumps up to can_dump_full whole packets if full_pkt, headers otherwise.
  */
-struct skb_ext *__skb_ext_alloc(gfp_t flags)
+void skb_dump(const char *level, const struct sk_buff *skb, bool full_pkt)
 {
-	struct skb_ext *new = kmem_cache_alloc(skbuff_ext_cache, flags);
+	static atomic_t can_dump_full = ATOMIC_INIT(5);
+	struct skb_shared_info *sh = skb_shinfo(skb);
+	struct net_device *dev = skb->dev;
+	struct sock *sk = skb->sk;
+	struct sk_buff *list_skb;
+	bool has_mac, has_trans;
+	int headroom, tailroom;
+	int i, len, seg_len;
 
-	if (new) {
-		memset(new->offset, 0, sizeof(new->offset));
-		refcount_set(&new->refcnt, 1);
+	if (full_pkt)
+		full_pkt = atomic_dec_if_positive(&can_dump_full) >= 0;
+
+	if (full_pkt)
+		len = skb->len;
+	else
+		len = min_t(int, skb->len, MAX_HEADER + 128);
+
+	headroom = skb_headroom(skb);
+	tailroom = skb_tailroom(skb);
+
+	has_mac = skb_mac_header_was_set(skb);
+	has_trans = skb_transport_header_was_set(skb);
+
+	printk("%sskb len=%u headroom=%u headlen=%u tailroom=%u\n"
+	       "mac=(%d,%d) net=(%d,%d) trans=%d\n"
+	       "shinfo(txflags=%u nr_frags=%u gso(size=%hu type=%u segs=%hu))\n"
+	       "csum(0x%x ip_summed=%u complete_sw=%u valid=%u level=%u)\n"
+	       "hash(0x%x sw=%u l4=%u) proto=0x%04x pkttype=%u iif=%d\n",
+	       level, skb->len, headroom, skb_headlen(skb), tailroom,
+	       has_mac ? skb->mac_header : -1,
+	       has_mac ? skb_mac_header_len(skb) : -1,
+	       skb->network_header,
+	       has_trans ? skb_network_header_len(skb) : -1,
+	       has_trans ? skb->transport_header : -1,
+	       sh->tx_flags, sh->nr_frags,
+	       sh->gso_size, sh->gso_type, sh->gso_segs,
+	       skb->csum, skb->ip_summed, skb->csum_complete_sw,
+	       skb->csum_valid, skb->csum_level,
+	       skb->hash, skb->sw_hash, skb->l4_hash,
+	       ntohs(skb->protocol), skb->pkt_type, skb->skb_iif);
+
+	if (dev)
+		printk("%sdev name=%s feat=0x%pNF\n",
+		       level, dev->name, &dev->features);
+	if (sk)
+		printk("%ssk family=%hu type=%u proto=%u\n",
+		       level, sk->sk_family, sk->sk_type, sk->sk_protocol);
+
+	if (full_pkt && headroom)
+		print_hex_dump(level, "skb headroom: ", DUMP_PREFIX_OFFSET,
+			       16, 1, skb->head, headroom, false);
+
+	seg_len = min_t(int, skb_headlen(skb), len);
+	if (seg_len)
+		print_hex_dump(level, "skb linear:   ", DUMP_PREFIX_OFFSET,
+			       16, 1, skb->data, seg_len, false);
+	len -= seg_len;
+
+	if (full_pkt && tailroom)
+		print_hex_dump(level, "skb tailroom: ", DUMP_PREFIX_OFFSET,
+			       16, 1, skb_tail_pointer(skb), tailroom, false);
+
+	for (i = 0; len && i < skb_shinfo(skb)->nr_frags; i++) {
+		skb_frag_t *frag = &skb_shinfo(skb)->frags[i];
+		u32 p_off, p_len, copied;
+		struct page *p;
+		u8 *vaddr;
+
+		skb_frag_foreach_page(frag, frag->page_offset, skb_frag_size(frag),
+				      p, p_off, p_len, copied) {
+			seg_len = min_t(int, p_len, len);
+			vaddr = kmap_atomic(p);
+			print_hex_dump(level, "skb frag:     ",
+				       DUMP_PREFIX_OFFSET,
+				       16, 1, vaddr + p_off, seg_len, false);
+			kunmap_atomic(vaddr);
+			len -= seg_len;
+			if (!len)
+				break;
+		}
 	}
 
-	return new;
-}
-
-static struct skb_ext *skb_ext_maybe_cow(struct skb_ext *old,
-					 unsigned int old_active)
-{
-	struct skb_ext *new;
-
-	if (refcount_read(&old->refcnt) == 1)
-		return old;
-
-	new = kmem_cache_alloc(skbuff_ext_cache, GFP_ATOMIC);
-	if (!new)
-		return NULL;
-
-	memcpy(new, old, old->chunks * SKB_EXT_ALIGN_VALUE);
-	refcount_set(&new->refcnt, 1);
-
-#ifdef CONFIG_XFRM
-	if (old_active & (1 << SKB_EXT_SEC_PATH)) {
-		struct sec_path *sp = skb_ext_get_ptr(old, SKB_EXT_SEC_PATH);
-		unsigned int i;
-
-		for (i = 0; i < sp->len; i++)
-			xfrm_state_hold(sp->xvec[i]);
-	}
-#endif
-	__skb_ext_put(old);
-	return new;
-}
-
-/**
- * __skb_ext_set - attach the specified extension storage to this skb
- * @skb: buffer
- * @id: extension id
- * @ext: extension storage previously allocated via __skb_ext_alloc()
- *
- * Existing extensions, if any, are cleared.
- *
- * Returns the pointer to the extension.
- */
-void *__skb_ext_set(struct sk_buff *skb, enum skb_ext_id id,
-		    struct skb_ext *ext)
-{
-	unsigned int newlen, newoff = SKB_EXT_CHUNKSIZEOF(*ext);
-
-	skb_ext_put(skb);
-	newlen = newoff + skb_ext_type_len[id];
-	ext->chunks = newlen;
-	ext->offset[id] = newoff;
-	skb->extensions = ext;
-	skb->active_extensions = 1 << id;
-	return skb_ext_get_ptr(ext, id);
-}
-
-/**
- * skb_ext_add - allocate space for given extension, COW if needed
- * @skb: buffer
- * @id: extension to allocate space for
- *
- * Allocates enough space for the given extension.
- * If the extension is already present, a pointer to that extension
- * is returned.
- *
- * If the skb was cloned, COW applies and the returned memory can be
- * modified without changing the extension space of clones buffers.
- *
- * Returns pointer to the extension or NULL on allocation failure.
- */
-void *skb_ext_add(struct sk_buff *skb, enum skb_ext_id id)
-{
-	struct skb_ext *new, *old = NULL;
-	unsigned int newlen, newoff;
-
-	if (skb->active_extensions) {
-		old = skb->extensions;
-
-		new = skb_ext_maybe_cow(old, skb->active_extensions);
-		if (!new)
-			return NULL;
-
-		if (__skb_ext_exist(new, id))
-			goto set_active;
-
-		newoff = new->chunks;
-	} else {
-		newoff = SKB_EXT_CHUNKSIZEOF(*new);
-
-		new = __skb_ext_alloc(GFP_ATOMIC);
-		if (!new)
-			return NULL;
-	}
-
-	newlen = newoff + skb_ext_type_len[id];
-	new->chunks = newlen;
-	new->offset[id] = newoff;
-set_active:
-	skb->slow_gro = 1;
-	skb->extensions = new;
-	skb->active_extensions |= 1 << id;
-	return skb_ext_get_ptr(new, id);
-}
-EXPORT_SYMBOL(skb_ext_add);
-
-#ifdef CONFIG_XFRM
-static void skb_ext_put_sp(struct sec_path *sp)
-{
-	unsigned int i;
-
-	for (i = 0; i < sp->len; i++)
-		xfrm_state_put(sp->xvec[i]);
-}
-#endif
-
-#ifdef CONFIG_MCTP_FLOWS
-static void skb_ext_put_mctp(struct mctp_flow *flow)
-{
-	if (flow->key)
-		mctp_key_unref(flow->key);
-}
-#endif
-
-void __skb_ext_del(struct sk_buff *skb, enum skb_ext_id id)
-{
-	struct skb_ext *ext = skb->extensions;
-
-	skb->active_extensions &= ~(1 << id);
-	if (skb->active_extensions == 0) {
-		skb->extensions = NULL;
-		__skb_ext_put(ext);
-#ifdef CONFIG_XFRM
-	} else if (id == SKB_EXT_SEC_PATH &&
-		   refcount_read(&ext->refcnt) == 1) {
-		struct sec_path *sp = skb_ext_get_ptr(ext, SKB_EXT_SEC_PATH);
-
-		skb_ext_put_sp(sp);
-		sp->len = 0;
-#endif
+	if (full_pkt && skb_has_frag_list(skb)) {
+		printk("skb fraglist:\n");
+		skb_walk_frags(skb, list_skb)
+			skb_dump(level, list_skb, true);
 	}
 }
-EXPORT_SYMBOL(__skb_ext_del);
-
-void __skb_ext_put(struct skb_ext *ext)
-{
-	/* If this is last clone, nothing can increment
-	 * it after check passes.  Avoids one atomic op.
-	 */
-	if (refcount_read(&ext->refcnt) == 1)
-		goto free_now;
-
-	if (!refcount_dec_and_test(&ext->refcnt))
-		return;
-free_now:
-#ifdef CONFIG_XFRM
-	if (__skb_ext_exist(ext, SKB_EXT_SEC_PATH))
-		skb_ext_put_sp(skb_ext_get_ptr(ext, SKB_EXT_SEC_PATH));
-#endif
-#ifdef CONFIG_MCTP_FLOWS
-	if (__skb_ext_exist(ext, SKB_EXT_MCTP))
-		skb_ext_put_mctp(skb_ext_get_ptr(ext, SKB_EXT_MCTP));
-#endif
-
-	kmem_cache_free(skbuff_ext_cache, ext);
-}
-EXPORT_SYMBOL(__skb_ext_put);
-#endif /* CONFIG_SKB_EXTENSIONS */
+EXPORT_SYMBOL(skb_dump);

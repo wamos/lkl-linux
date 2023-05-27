@@ -1,0 +1,5 @@
+config NET_DPDK
+	tristate "DPDK ethernet driver"
+	default y
+	help
+	  DPDK ethernet driver.

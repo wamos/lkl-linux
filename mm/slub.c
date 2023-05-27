@@ -1795,6 +1795,12 @@ static inline struct slab *alloc_slab_page(gfp_t flags, int node,
 	struct slab *slab;
 	unsigned int order = oo_order(oo);
 
+	if (s->flags & SLAB_DPDK_DMA) {
+		flags |= GFP_DPDK_DMA;
+	} else if (s->flags & SLAB_SPDK_DMA) {
+		flags |= GFP_SPDK_DMA;
+	}
+
 	if (node == NUMA_NO_NODE)
 		folio = (struct folio *)alloc_pages(flags, order);
 	else
@@ -3996,6 +4002,12 @@ static int init_kmem_cache_nodes(struct kmem_cache *s)
 		}
 
 		init_kmem_cache_node(n);
+		node = DMA_ZONE_SGX;
+		if (s->flags & SLAB_DPDK_DMA) {
+			node = DMA_ZONE_DPDK;
+		} else if (s->flags & SLAB_SPDK_DMA) {
+			node = DMA_ZONE_SPDK;
+		}
 		s->node[node] = n;
 	}
 	return 1;

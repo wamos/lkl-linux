@@ -81,7 +81,7 @@ static inline void virtio_deliver_irq(struct virtio_dev *dev)
 	dev->int_status |= VIRTIO_MMIO_INT_VRING;
 	/* Make sure all memory writes before are visible to the driver. */
 	__sync_synchronize();
-	lkl_trigger_irq(dev->irq);
+	lkl_trigger_irq(-1, dev->irq);
 }
 
 static inline uint16_t virtio_get_used_idx(struct virtio_queue *q)
@@ -186,6 +186,9 @@ void virtio_req_complete(struct virtio_req *req, uint32_t len)
 		q->last_used_idx_signaled = virtio_get_used_idx(q);
 		virtio_deliver_irq(_req->dev);
 	}
+
+	if (q->last_avail_idx == le16toh(q->avail->idx))
+		virtio_set_avail_event(q, q->avail->idx);
 }
 
 /*
@@ -302,8 +305,11 @@ void virtio_process_queue(struct virtio_dev *dev, uint32_t qidx)
 
 	if (!q->ready)
 		return;
-
-	if (dev->ops->acquire_queue)
+void *thread = lkl_host_ops.thread_self();
+	if (dev->device_id == LKL_VIRTIO_ID_BLOCK && dev->ops->try_acquire_queue) {
+		if (dev->ops->try_acquire_queue(dev, qidx) != 0)
+			return;
+	} else if (dev->ops->acquire_queue)
 		dev->ops->acquire_queue(dev, qidx);
 
 	while (q->last_avail_idx != le16toh(q->avail->idx)) {
@@ -314,8 +320,6 @@ void virtio_process_queue(struct virtio_dev *dev, uint32_t qidx)
 		__sync_synchronize();
 		if (virtio_process_one(dev, qidx) < 0)
 			break;
-		if (q->last_avail_idx == le16toh(q->avail->idx))
-			virtio_set_avail_event(q, q->avail->idx);
 	}
 
 	if (dev->ops->release_queue)
@@ -471,7 +475,11 @@ static int virtio_write(void *data, int offset, void *res, int size)
 		dev->queue[dev->queue_sel].ready = val;
 		break;
 	case VIRTIO_MMIO_QUEUE_NOTIFY:
-		virtio_process_queue(dev, val);
+		if (dev->ops->process_queue) {
+			dev->ops->process_queue(dev, val);
+		} else {
+			virtio_process_queue(dev, val);
+		}
 		break;
 	case VIRTIO_MMIO_INTERRUPT_ACK:
 		dev->int_status = 0;

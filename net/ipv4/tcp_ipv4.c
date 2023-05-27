@@ -1908,6 +1908,8 @@ static void tcp_v4_fill_cb(struct sk_buff *skb, const struct iphdr *iph,
  *	From tcp_input.c
  */
 
+extern void tcp_tasklet_disable(void);
+extern void tcp_tasklet_enable(void);
 int tcp_v4_rcv(struct sk_buff *skb)
 {
 	struct net *net = dev_net(skb->dev);
@@ -2068,6 +2070,7 @@ process:
 
 	sk_defer_free_flush(sk);
 	bh_lock_sock_nested(sk);
+	tcp_tasklet_disable();
 	tcp_segs_in(tcp_sk(sk), skb);
 	ret = 0;
 	if (!sock_owned_by_user(sk)) {
@@ -2077,6 +2080,7 @@ process:
 			goto discard_and_relse;
 	}
 	bh_unlock_sock(sk);
+	tcp_tasklet_enable();
 
 put_and_return:
 	if (refcounted)

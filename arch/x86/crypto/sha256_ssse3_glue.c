@@ -366,6 +366,8 @@ static inline void unregister_sha256_ni(void) { }
 
 static int __init sha256_ssse3_mod_init(void)
 {
+// everything but sha256_ni seems to crash right now
+#if 0
 	if (register_sha256_ssse3())
 		goto fail;
 
@@ -379,11 +381,12 @@ static int __init sha256_ssse3_mod_init(void)
 		unregister_sha256_ssse3();
 		goto fail;
 	}
+#endif
 
 	if (register_sha256_ni()) {
-		unregister_sha256_avx2();
-		unregister_sha256_avx();
-		unregister_sha256_ssse3();
+		//unregister_sha256_avx2();
+		//unregister_sha256_avx();
+		//unregister_sha256_ssse3();
 		goto fail;
 	}
 

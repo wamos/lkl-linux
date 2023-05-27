@@ -47,7 +47,7 @@ static DECLARE_WORK(slab_caches_to_rcu_destroy_work,
  */
 #define SLAB_NEVER_MERGE (SLAB_RED_ZONE | SLAB_POISON | SLAB_STORE_USER | \
 		SLAB_TRACE | SLAB_TYPESAFE_BY_RCU | SLAB_NOLEAKTRACE | \
-		SLAB_FAILSLAB | kasan_never_merge())
+		SLAB_FAILSLAB | SLAB_KASAN | SLAB_DPDK_DMA | SLAB_SPDK_DMA)
 
 #define SLAB_MERGE_SAME (SLAB_RECLAIM_ACCOUNT | SLAB_CACHE_DMA | \
 			 SLAB_CACHE_DMA32 | SLAB_ACCOUNT)
@@ -685,6 +685,17 @@ kmalloc_caches[NR_KMALLOC_TYPES][KMALLOC_SHIFT_HIGH + 1] __ro_after_init =
 { /* initialization for https://bugs.llvm.org/show_bug.cgi?id=42570 */ };
 EXPORT_SYMBOL(kmalloc_caches);
 
+<<<<<<< HEAD
+=======
+#ifdef CONFIG_ZONE_DMA
+struct kmem_cache *kmalloc_dma_caches[KMALLOC_SHIFT_HIGH + 1] __ro_after_init;
+EXPORT_SYMBOL(kmalloc_dma_caches);
+#endif
+
+struct kmem_cache *kmalloc_dpdk_caches[KMALLOC_SHIFT_HIGH + 1] __ro_after_init;
+EXPORT_SYMBOL(kmalloc_dpdk_caches);
+
+>>>>>>> f0c02ddbafff11c0854221b1c043a59d42961e7b
 /*
  * Conversion table for small slabs sizes / 8 to the index in the
  * kmalloc array. This is necessary for slabs < 192 since we have non power
@@ -757,6 +768,7 @@ struct kmem_cache *kmalloc_slab(size_t size, gfp_t flags)
 #define KMALLOC_CGROUP_NAME(sz)
 #endif
 
+<<<<<<< HEAD
 #define INIT_KMALLOC_INFO(__size, __short_size)			\
 {								\
 	.name[KMALLOC_NORMAL]  = "kmalloc-" #__short_size,	\
@@ -764,6 +776,12 @@ struct kmem_cache *kmalloc_slab(size_t size, gfp_t flags)
 	KMALLOC_CGROUP_NAME(__short_size)			\
 	KMALLOC_DMA_NAME(__short_size)				\
 	.size = __size,						\
+=======
+	if (unlikely(flags & GFP_DPDK_DMA)) {
+		return kmalloc_dpdk_caches[index];
+	}
+	return kmalloc_caches[index];
+>>>>>>> f0c02ddbafff11c0854221b1c043a59d42961e7b
 }
 
 /*
@@ -873,6 +891,24 @@ new_kmalloc_cache(int idx, enum kmalloc_cache_type type, slab_flags_t flags)
 		kmalloc_caches[type][idx]->refcount = -1;
 }
 
+static void __init kmem_cache_dpdk_init(void) {
+	size_t i;
+	for (i = 0; i <= KMALLOC_SHIFT_HIGH; i++) {
+		struct kmem_cache *s = kmalloc_caches[i];
+
+		if (s) {
+			unsigned int size = kmalloc_size(i);
+			char *n = kasprintf(GFP_NOWAIT,
+				 "dpdk-kmalloc-%u", size);
+
+			BUG_ON(!n);
+			kmalloc_dpdk_caches[i] = create_kmalloc_cache(n,
+				size, SLAB_DPDK_DMA, 0, 0);
+			BUG_ON(!kmalloc_dpdk_caches[i]);
+		}
+	}
+}
+
 /*
  * Create the kmalloc array. Some of the regular kmalloc arrays
  * may already have been created because they were needed to
@@ -921,6 +957,7 @@ void __init create_kmalloc_caches(slab_flags_t flags)
 		}
 	}
 #endif
+  kmem_cache_dpdk_init();
 }
 #endif /* !CONFIG_SLOB */
 
